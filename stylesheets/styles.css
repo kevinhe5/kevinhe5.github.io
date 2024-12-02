@@ -112,7 +112,12 @@ header {
   float:left;
   position:fixed;
   -webkit-font-smoothing:subpixel-antialiased;
+  text-align: center;
 }
+
+/* header p {
+  text-align: center;
+} */
 
 header ul {
   list-style:none;
@@ -233,7 +238,7 @@ footer {
   }
 }
 
-@media print, screen and (max-width: 720px) {
+@media print, screen and (max-width: 600px) {
   body {
     word-wrap:break-word;
   }
