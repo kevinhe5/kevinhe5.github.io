@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LLM Inference Visualizations</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#eef0fc;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  display:flex;flex-direction:column;align-items:center;
+  min-height:100vh;padding:40px 16px;
+}
+header{text-align:center;margin-bottom:40px}
+h1{font-size:1.9rem;color:#1a1d3e;font-weight:800;margin-bottom:10px}
+.subtitle{font-size:1rem;color:#666;max-width:580px;line-height:1.6}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:20px;
+  max-width:880px;width:100%;
+}
+
+.card{
+  background:#fff;
+  border-radius:14px;
+  padding:28px 28px 22px;
+  box-shadow:0 3px 20px #1a1d3e12;
+  text-decoration:none;
+  display:flex;flex-direction:column;gap:10px;
+  border:2px solid transparent;
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.card:hover{
+  transform:translateY(-3px);
+  box-shadow:0 8px 32px #1a1d3e20;
+  border-color:var(--accent);
+}
+
+.card-tag{
+  display:inline-flex;align-items:center;
+  background:var(--accent-light);
+  color:var(--accent);
+  font-size:10px;font-weight:800;
+  padding:3px 10px;border-radius:20px;
+  text-transform:uppercase;letter-spacing:.8px;
+  width:fit-content;
+}
+.card h2{font-size:1.1rem;color:#1a1d3e;font-weight:700}
+.card p{font-size:.86rem;color:#555;line-height:1.6;flex:1}
+.card-cta{
+  display:flex;align-items:center;gap:6px;
+  font-size:.85rem;font-weight:700;color:var(--accent);
+  margin-top:4px;
+}
+.card-cta::after{content:'→';transition:transform .15s}
+.card:hover .card-cta::after{transform:translateX(4px)}
+
+.card.blue  {--accent:#1e88e5;--accent-light:#dbeeff}
+.card.green {--accent:#2e7d32;--accent-light:#e8f5e9}
+.card.purple{--accent:#6d28d9;--accent-light:#ede9fe}
+.card.orange{--accent:#e65100;--accent-light:#fff3e0}
+
+footer{margin-top:48px;font-size:.8rem;color:#aaa;text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LLM Inference Visualizations</h1>
+  <p class="subtitle">Interactive step-by-step animations explaining how vLLM and modern LLM inference engines work under the hood.</p>
+</header>
+
+<div class="grid">
+
+  <a class="card blue" href="paged-attention.html">
+    <span class="card-tag">Memory Management</span>
+    <h2>PagedAttention</h2>
+    <p>How vLLM divides GPU memory into fixed-size physical blocks, maps logical block tables per request, and eliminates KV cache fragmentation — token by token.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+  <a class="card green" href="prefill-decode.html">
+    <span class="card-tag">Execution Phases</span>
+    <h2>Prefill vs. Decode</h2>
+    <p>Why LLM inference has two fundamentally different phases: a compute-bound prefill that processes all prompt tokens at once, and a memory-bandwidth-bound decode that generates tokens one at a time.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+  <a class="card purple" href="continuous-batching.html">
+    <span class="card-tag">Scheduling</span>
+    <h2>Continuous Batching</h2>
+    <p>How iteration-level scheduling eliminates the GPU idle time of static batching by slotting new requests in the moment another finishes — instead of waiting for an entire batch to complete.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+  <a class="card orange" href="kv-preemption.html">
+    <span class="card-tag">Memory Pressure</span>
+    <h2>KV Cache Preemption</h2>
+    <p>What happens when the KV cache fills up mid-batch: how vLLM evicts a request's blocks, swaps them to CPU memory, and later restores them to resume generation without corrupting other requests.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+</div>
+
+<footer>Based on the <a href="https://arxiv.org/abs/2309.06180" style="color:#888">PagedAttention paper</a> (Kwon et al., 2023) and the <a href="https://github.com/vllm-project/vllm" style="color:#888">vLLM</a> system.</footer>
+
+</body>
+</html>

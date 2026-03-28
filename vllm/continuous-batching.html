@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Continuous Batching — vLLM Scheduling</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 12px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:960px;max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#4f5ff8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:960px;max-width:100%;height:450px;
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;flex-direction:column;
+  overflow:hidden;padding:16px 20px;gap:0;
+}
+
+/* Timeline panel — repeated for static and continuous */
+.tl-panel{flex:1;display:flex;flex-direction:column;gap:5px;min-height:0}
+.tl-panel:first-child{border-bottom:1px solid #e8eaf6;padding-bottom:12px;margin-bottom:12px}
+
+.tl-header{display:flex;align-items:center;gap:10px;flex-shrink:0;margin-bottom:6px}
+.tl-title{font-size:11px;font-weight:800;letter-spacing:.3px}
+.tl-badge{
+  font-size:9px;font-weight:700;padding:2px 9px;border-radius:12px;
+}
+
+.tl-lanes{flex:1;display:flex;flex-direction:column;gap:5px;position:relative}
+.lane{
+  flex:1;
+  display:flex;align-items:center;gap:0;
+  position:relative;
+}
+
+/* Lane label */
+.lane-label{
+  width:52px;flex-shrink:0;
+  font-size:9px;font-weight:700;color:#aaa;text-align:right;padding-right:8px;
+}
+
+/* Timeline track */
+.lane-track{
+  flex:1;height:100%;
+  border-radius:5px;
+  background:#f5f6fc;
+  border:1px solid #e8eaf6;
+  position:relative;
+  overflow:hidden;
+}
+
+/* Each request bar inside the track */
+.req-bar{
+  position:absolute;top:3px;bottom:3px;
+  border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:800;
+  color:#fff;
+  opacity:0;
+  transform:scaleX(0);
+  transform-origin:left center;
+  transition:opacity 350ms ease, transform 450ms cubic-bezier(.4,0,.2,1);
+  white-space:nowrap;overflow:hidden;
+}
+.req-bar.show{opacity:1;transform:scaleX(1)}
+
+/* Idle bars (static only) */
+.idle-bar{
+  position:absolute;top:3px;bottom:3px;
+  border-radius:5px;
+  background:repeating-linear-gradient(
+    45deg,
+    #e0e4f0 0px, #e0e4f0 4px,
+    #f0f2fa 4px, #f0f2fa 8px
+  );
+  border:1.5px dashed #c8cce8;
+  opacity:0;
+  transition:opacity 400ms ease;
+  display:flex;align-items:center;justify-content:center;
+}
+.idle-bar.show{opacity:1}
+.idle-bar span{font-size:9px;font-weight:700;color:#aaa}
+
+/* Tick marks */
+.tick-row{
+  height:16px;flex-shrink:0;
+  display:flex;align-items:flex-start;
+  margin-left:52px; /* align with lane tracks */
+  position:relative;
+}
+.tick{
+  position:absolute;
+  font-size:8px;color:#bbb;font-weight:600;
+  transform:translateX(-50%);
+}
+.tick-line{
+  position:absolute;top:0;bottom:0;
+  width:1px;background:#e8eaf6;
+  pointer-events:none;
+}
+
+/* Utilization bars at bottom */
+#util-row{
+  display:flex;gap:20px;margin-top:8px;flex-shrink:0;
+  margin-left:52px;
+}
+.util-wrap{flex:1}
+.util-label{font-size:9px;font-weight:700;color:#aaa;margin-bottom:3px}
+.util-track{height:10px;background:#f0f2fa;border-radius:5px;overflow:hidden;border:1px solid #e8eaf6}
+.util-fill{height:100%;border-radius:5px;width:0%;transition:width 900ms ease}
+
+/* Desc + controls */
+#desc-box{width:960px;max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #6d28d9;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#4f5ff8;color:#fff}
+#btn-next:hover:not(:disabled){background:#6472fa}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#43a047;color:#fff}
+#btn-play:hover:not(:disabled){background:#56b25a}
+#btn-play:disabled{opacity:.35;cursor:default}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#4f5ff8;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Continuous Batching</h1>
+  </div>
+  <span id="step-pill">Step 1 / 7</span>
+</div>
+
+<div id="stage">
+  <!-- Static batching row -->
+  <div class="tl-panel" id="panel-static">
+    <div class="tl-header">
+      <span class="tl-title" style="color:#c62828">Static Batching</span>
+      <span class="tl-badge" style="background:#fdecea;color:#c62828">Wait for entire batch to finish</span>
+      <span id="static-util-badge" style="font-size:9px;color:#bbb;margin-left:auto"></span>
+    </div>
+    <div class="tl-lanes" id="static-lanes"><!-- injected --></div>
+  </div>
+
+  <!-- Continuous batching row -->
+  <div class="tl-panel" id="panel-cont">
+    <div class="tl-header">
+      <span class="tl-title" style="color:#2e7d32">Continuous Batching</span>
+      <span class="tl-badge" style="background:#e8f5e9;color:#2e7d32">Slot in new requests immediately</span>
+      <span id="cont-util-badge" style="font-size:9px;color:#bbb;margin-left:auto"></span>
+    </div>
+    <div class="tl-lanes" id="cont-lanes"><!-- injected --></div>
+  </div>
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Timeline constants ─────────────────────────────────────────────────────
+// Total visual ticks shown: 20
+// Pixel width of each tick: computed from container
+// We use percentage-based positioning (% of lane-track width).
+
+const TOTAL_TICKS = 20;
+const pct = t => (t / TOTAL_TICKS * 100).toFixed(2) + '%';
+const w   = (dur) => (dur / TOTAL_TICKS * 100).toFixed(2) + '%';
+
+// Request definitions: {id, label, start, dur, color}
+const REQUESTS = {
+  A: {label:'A', start:0,  dur:4,  color:'#1e88e5', bg:'#1e88e5dd'},
+  B: {label:'B', start:0,  dur:7,  color:'#8e24aa', bg:'#8e24aadd'},
+  C: {label:'C', start:0,  dur:11, color:'#e53935', bg:'#e53935dd'},
+  D: {label:'D', start:4,  dur:5,  color:'#f57c00', bg:'#f57c00dd'}, // continuous start
+  E: {label:'E', start:7,  dur:6,  color:'#00838f', bg:'#00838fdd'}, // continuous start
+  F: {label:'F', start:11, dur:4,  color:'#2e7d32', bg:'#2e7d32dd'},
+  // Static D/E/F start at 11 (next batch)
+  D_s: {label:'D', start:11, dur:5, color:'#f57c00', bg:'#f57c00dd'},
+  E_s: {label:'E', start:11, dur:6, color:'#00838f', bg:'#00838fdd'},
+  F_s: {label:'F', start:11, dur:4, color:'#2e7d32', bg:'#2e7d32dd'},
+};
+
+// ── Build timeline panels ─────────────────────────────────────────────────
+function buildPanel(containerId, lanes) {
+  const container = document.getElementById(containerId);
+  const trackW = 'calc(100% - 52px)'; // matches lane-label offset
+
+  lanes.forEach(({label, bars, idles}) => {
+    const lane = document.createElement('div');
+    lane.className = 'lane';
+    lane.innerHTML = `<span class="lane-label">Slot ${label}</span>`;
+
+    const track = document.createElement('div');
+    track.className = 'lane-track';
+
+    // tick lines
+    for (let t = 0; t <= TOTAL_TICKS; t += 4) {
+      const line = document.createElement('div');
+      line.className = 'tick-line';
+      line.style.left = pct(t);
+      track.appendChild(line);
+    }
+
+    bars.forEach(({req, id}) => {
+      const r = REQUESTS[req];
+      const bar = document.createElement('div');
+      bar.className = 'req-bar';
+      bar.id = id;
+      bar.style.left  = pct(r.start);
+      bar.style.width = w(r.dur);
+      bar.style.background = r.bg;
+      bar.textContent = `Req ${r.label}`;
+      track.appendChild(bar);
+    });
+
+    (idles || []).forEach(({id, start, dur}) => {
+      const idleBar = document.createElement('div');
+      idleBar.className = 'idle-bar';
+      idleBar.id = id;
+      idleBar.style.left  = pct(start);
+      idleBar.style.width = w(dur);
+      idleBar.innerHTML = `<span>idle</span>`;
+      track.appendChild(idleBar);
+    });
+
+    lane.appendChild(track);
+    container.appendChild(lane);
+  });
+
+  // tick labels
+  const tickRow = document.createElement('div');
+  tickRow.className = 'tick-row';
+  for (let t = 0; t <= TOTAL_TICKS; t += 4) {
+    const tk = document.createElement('span');
+    tk.className = 'tick';
+    tk.style.left = `calc(${pct(t)} - 0px)`;
+    tk.textContent = `t=${t}`;
+    tickRow.appendChild(tk);
+  }
+  container.appendChild(tickRow);
+}
+
+buildPanel('static-lanes', [
+  { label:1, bars:[{req:'A',id:'sb-A'}],   idles:[{id:'si-A',start:4,dur:7}] },
+  { label:2, bars:[{req:'B',id:'sb-B'}],   idles:[{id:'si-B',start:7,dur:4}] },
+  { label:3, bars:[{req:'C',id:'sb-C'}],   idles:[] },
+]);
+// Add next-batch bars for static
+const sLane1Track = document.querySelector('#static-lanes .lane:nth-child(1) .lane-track');
+const sLane2Track = document.querySelector('#static-lanes .lane:nth-child(2) .lane-track');
+const sLane3Track = document.querySelector('#static-lanes .lane:nth-child(3) .lane-track');
+[{track:sLane1Track,req:'D_s',id:'sb-Ds'},{track:sLane2Track,req:'E_s',id:'sb-Es'},{track:sLane3Track,req:'F_s',id:'sb-Fs'}].forEach(({track,req,id}) => {
+  const r = REQUESTS[req];
+  const bar = document.createElement('div');
+  bar.className = 'req-bar'; bar.id = id;
+  bar.style.left = pct(r.start); bar.style.width = w(r.dur);
+  bar.style.background = r.bg; bar.textContent = `Req ${r.label}`;
+  track.appendChild(bar);
+});
+
+buildPanel('cont-lanes', [
+  { label:1, bars:[{req:'A',id:'cb-A'},{req:'D',id:'cb-D'}], idles:[] },
+  { label:2, bars:[{req:'B',id:'cb-B'},{req:'E',id:'cb-E'}], idles:[] },
+  { label:3, bars:[{req:'C',id:'cb-C'},{req:'F',id:'cb-F'}], idles:[] },
+]);
+
+// ── Show/hide helpers ─────────────────────────────────────────────────────
+function show(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.classList.add('show'); }); }
+function hide(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.classList.remove('show'); }); }
+
+function setUtilBadge(staticPct, contPct) {
+  const s = document.getElementById('static-util-badge');
+  const c = document.getElementById('cont-util-badge');
+  if (staticPct !== null) { s.textContent = `GPU utilization ≈ ${staticPct}%`; s.style.color = staticPct < 70 ? '#c62828' : '#555'; }
+  if (contPct !== null)   { c.textContent = `GPU utilization ≈ ${contPct}%`;   c.style.color = contPct > 85 ? '#2e7d32' : '#555'; }
+}
+
+function resetAll() {
+  ['sb-A','sb-B','sb-C','sb-Ds','sb-Es','sb-Fs','si-A','si-B',
+   'cb-A','cb-B','cb-C','cb-D','cb-E','cb-F'].forEach(id => hide(id));
+  document.getElementById('static-util-badge').textContent = '';
+  document.getElementById('cont-util-badge').textContent = '';
+}
+
+function applyInstant(n) {
+  // Step 1: initial batch starts (A,B,C in both)
+  if (n >= 1) show('sb-A','sb-B','sb-C','cb-A','cb-B','cb-C');
+  // Step 2: t=4, A done. Static: idle on slot 1. Continuous: D starts.
+  if (n >= 2) { show('si-A','cb-D'); }
+  // Step 3: t=7, B done. Static: idle on slot 2. Continuous: E starts.
+  if (n >= 3) { show('si-B','cb-E'); }
+  // Step 4: t=11, C done. Static: next batch starts. Continuous: F starts.
+  if (n >= 4) { show('sb-Ds','sb-Es','sb-Fs','cb-F'); }
+  // Step 5: util comparison
+  if (n >= 5) setUtilBadge(63, 92);
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Static batching (top): the GPU processes a fixed set of requests; the next batch only starts after ALL current requests finish. Continuous batching (bottom): as soon as any request completes, a waiting request immediately takes its slot.',
+    async run() {}
+  },
+  {
+    desc: 'At t=0, the same three requests arrive: A (4 steps), B (7 steps), C (11 steps). Both approaches start identically — the difference only shows up as requests complete.',
+    async run() {
+      show('sb-A','sb-B','sb-C'); await sleep(100);
+      show('cb-A','cb-B','cb-C');
+    }
+  },
+  {
+    desc: 'At t=4, Request A finishes. Static batching: Slot 1 goes idle and waits — B and C are still running, so no new request can start. Continuous batching: Request D immediately fills Slot 1. No GPU idle time.',
+    async run() { show('si-A'); await sleep(80); show('cb-D'); }
+  },
+  {
+    desc: 'At t=7, Request B finishes. Static: Slot 2 goes idle (only C is left, holding up everything). Continuous: Request E immediately fills Slot 2.',
+    async run() { show('si-B'); await sleep(80); show('cb-E'); }
+  },
+  {
+    desc: 'At t=11, Request C finishes. Static: the whole batch is finally done — 7 steps of partial GPU waste before D/E/F can start. Continuous: Request F slots in immediately. D and E have already been running since t=4 and t=7.',
+    async run() { show('sb-Ds','sb-Es','sb-Fs'); await sleep(80); show('cb-F'); }
+  },
+  {
+    desc: 'Static: slots were idle from t=4 to t=11 (slots 1 and 2). 7+4 = 11 slot-steps wasted out of 33 total → ~67% utilization. Continuous: no idle time at all → ~92% utilization. Same 6 requests, same GPU — just smarter scheduling.',
+    async run() { setUtilBadge(63, 92); }
+  },
+  {
+    desc: 'Key insight: static batching treats a "batch" as the atomic unit; continuous batching treats each decode ITERATION as the atomic unit — after every step, the scheduler can swap in waiting requests. vLLM implements this as iteration-level scheduling.',
+    async run() {}
+  },
+];
+
+// ── Navigation ────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else {
+    if (n - cur > 1) { resetAll(); applyInstant(n - 1); }
+    await STEPS[n].run();
+  }
+  cur = n; busy = false; updateUI();
+}
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length - 1 && playActive) { await goTo(cur + 1); await sleep(900); }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#43a047'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) { ['btn-prev','btn-next','btn-play'].forEach(id => document.getElementById(id).disabled = !en); }
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' active':'');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); goTo(cur-1); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); goTo(cur+1); });
+document.getElementById('btn-play').addEventListener('click', playAll);
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if (e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>
