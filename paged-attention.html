@@ -4,499 +4,637 @@
 <meta charset="UTF-8">
 <title>PagedAttention — Step by Step</title>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#f0f2fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px 12px}
-  h1{font-size:1.25rem;color:#1a1d3e;font-weight:700;letter-spacing:-.3px}
-  #topbar{display:flex;align-items:center;justify-content:space-between;width:820px;max-width:100%;margin-bottom:12px}
-  #step-pill{background:#4f5ff8;color:#fff;font-size:.78rem;font-weight:700;padding:4px 12px;border-radius:20px}
-  canvas{border-radius:14px;box-shadow:0 4px 24px #1a1d3e1a;background:#fff;max-width:100%}
-  #desc-box{width:820px;max-width:100%;margin-top:12px;padding:13px 18px;background:#fff;border-radius:10px;border-left:4px solid #4f5ff8;box-shadow:0 2px 10px #1a1d3e10;font-size:.88rem;line-height:1.65;color:#2a2d4e;min-height:60px}
-  #controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
-  .ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.92rem;font-weight:700;transition:all .15s}
-  #btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
-  #btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
-  #btn-prev:disabled{opacity:.4;cursor:default}
-  #btn-next{background:#4f5ff8;color:#fff}
-  #btn-next:hover:not(:disabled){background:#6472fa}
-  #btn-next:disabled{opacity:.4;cursor:default}
-  #dots{display:flex;gap:7px;align-items:center}
-  .dot{width:9px;height:9px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
-  .dot.active{background:#4f5ff8;transform:scale(1.25)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 12px}
+
+/* Top bar */
+#topbar{display:flex;align-items:center;justify-content:space-between;width:960px;max-width:100%;margin-bottom:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#4f5ff8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+
+/* Stage */
+#stage{
+  position:relative;
+  width:960px;max-width:100%;height:450px;
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;
+  overflow:hidden;
+}
+
+/* Left panel */
+#left-panel{
+  width:295px;flex-shrink:0;
+  padding:15px 15px;
+  display:flex;flex-direction:column;gap:8px;
+  overflow:hidden;
+}
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
+
+/* Divider */
+#divider{width:1px;background:#e8eaf6;flex-shrink:0}
+
+/* Right panel */
+#right-panel{
+  flex:1;padding:15px 15px;
+  display:flex;flex-direction:column;
+  gap:7px;
+}
+
+/* Free pool */
+#free-pool{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+}
+.fp-chip{
+  padding:2px 5px;border-radius:4px;
+  font-size:8px;font-weight:700;
+  background:#e8f5e9;border:1.2px solid #43a047;color:#2e7d32;
+  transition:opacity 280ms ease;
+  white-space:nowrap;
+}
+.fp-chip.gone{opacity:0;pointer-events:none}
+
+/* Separator */
+.sep{height:1px;background:#e8eaf6;flex-shrink:0}
+
+/* Grid header */
+#grid-header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+#grid-note{font-size:9px;color:#bbb}
+
+/* Physical block grid */
+#phys-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:6px;
+  flex:1;
+}
+.pb{
+  border-radius:7px;border:1.5px solid #d4d8f0;background:#f5f6fc;
+  padding:5px 6px;
+  display:flex;flex-direction:column;gap:3px;
+  transition:background 350ms ease, border-color 350ms ease, box-shadow 350ms ease;
+}
+.pb.r1{background:#dbeeff;border-color:#1e88e5}
+.pb.r2{background:#fff3e0;border-color:#f57c00}
+.pb.new-glow{box-shadow:0 0 0 3px #f9a82566,0 0 18px #f9a82533}
+.pb.pulse{animation:blockPulse 500ms ease-out}
+@keyframes blockPulse{0%{transform:scale(1)}45%{transform:scale(1.07)}100%{transform:scale(1)}}
+
+.pb-head{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.pb-id{font-size:8px;font-weight:700;color:#bbb}
+.pb.r1 .pb-id{color:#1e88e5}
+.pb.r2 .pb-id{color:#f57c00}
+.pb-owner{font-size:7px;font-weight:600;color:#ccc}
+.pb.r1 .pb-owner{color:#1565c0}
+.pb.r2 .pb-owner{color:#e65100}
+
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;flex:1}
+.kv-slot{
+  border-radius:3px;background:#e4e8f4;
+  min-height:13px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:6px;font-weight:700;color:transparent;
+  transition:background 250ms ease, color 200ms ease;
+}
+.kv-slot.filled{color:#fff}
+.kv-slot.pop{animation:slotPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.pb.r1 .kv-slot.filled{background:#1e88e5}
+.pb.r2 .kv-slot.filled{background:#f57c00}
+
+/* Request cards */
+.req-card{
+  border-radius:8px;border:1.5px solid transparent;
+  padding:9px 11px;
+  opacity:0;transform:translateY(10px);
+  transition:opacity 350ms ease, transform 350ms ease;
+  flex-shrink:0;
+}
+.req-card.show{opacity:1;transform:translateY(0)}
+.req-card.r1{border-color:#1e88e5;background:#f4f9ff}
+.req-card.r2{border-color:#f57c00;background:#fffaf4}
+.req-title{font-size:11px;font-weight:700;margin-bottom:6px}
+.r1 .req-title{color:#1e88e5}
+.r2 .req-title{color:#f57c00}
+
+.tokens-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:7px}
+.tok{
+  padding:2px 5px;border-radius:4px;
+  font-size:9px;font-weight:700;border:1.2px solid;
+  opacity:0;transform:scale(.5);
+  transition:opacity 180ms ease, transform 180ms ease;
+}
+.tok.show{opacity:1;transform:scale(1)}
+.tok.highlight{animation:tokPulse 380ms ease-out}
+@keyframes tokPulse{0%{transform:scale(1)}45%{transform:scale(1.55)}100%{transform:scale(1)}}
+
+.bt-section-label{font-size:9px;color:#aaa;font-weight:600;margin-bottom:2px}
+.bt-row{display:flex;align-items:center;gap:5px;margin-top:3px}
+.bt-lb{
+  padding:2px 7px;border-radius:4px;
+  font-size:9px;font-weight:700;border:1.2px solid;
+  flex-shrink:0;
+}
+.r1 .bt-lb{border-color:#1e88e5;color:#1e88e5;background:#dbeeff}
+.r2 .bt-lb{border-color:#f57c00;color:#f57c00;background:#fff3e0}
+.bt-arr{color:#bbb;font-size:11px;flex-shrink:0}
+.bt-pb{
+  padding:2px 7px;border-radius:4px;
+  font-size:9px;font-weight:700;
+  background:#f0f2fa;color:#ccc;border:1.2px solid #e0e4f0;
+  transition:all 300ms ease;
+  flex-shrink:0;
+}
+.bt-pb.set.r1{background:#dbeeff;color:#1e88e5;border-color:#1e88e5}
+.bt-pb.set.r2{background:#fff3e0;color:#f57c00;border-color:#f57c00}
+
+/* Flying chip */
+.floater{
+  position:absolute;
+  z-index:200;
+  border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;
+  pointer-events:none;
+  box-shadow:0 4px 16px #0002;
+  transition:
+    left   680ms cubic-bezier(.25,.8,.25,1),
+    top    680ms cubic-bezier(.25,.8,.25,1),
+    width  680ms cubic-bezier(.25,.8,.25,1),
+    height 680ms cubic-bezier(.25,.8,.25,1),
+    border-radius 680ms ease,
+    opacity 200ms ease;
+}
+
+/* Desc + controls */
+#desc-box{
+  width:960px;max-width:100%;margin-top:12px;
+  padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #4f5ff8;
+  box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px;
+}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{
+  padding:9px 26px;border:none;border-radius:8px;cursor:pointer;
+  font-size:.9rem;font-weight:700;transition:all .15s;
+}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#4f5ff8;color:#fff}
+#btn-next:hover:not(:disabled){background:#6472fa}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#43a047;color:#fff}
+#btn-play:hover:not(:disabled){background:#56b25a}
+#btn-play:disabled{opacity:.35;cursor:default}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#4f5ff8;transform:scale(1.3)}
 </style>
 </head>
 <body>
 
 <div id="topbar">
   <h1>PagedAttention Algorithm</h1>
-  <span id="step-pill">Step 1 / 9</span>
+  <span id="step-pill">Step 1 / 14</span>
 </div>
-<canvas id="c"></canvas>
+
+<div id="stage">
+  <div id="left-panel">
+    <div class="panel-label">Requests</div>
+    <!-- cards injected by JS -->
+  </div>
+  <div id="divider"></div>
+  <div id="right-panel">
+    <div>
+      <div class="panel-label">Free Block Pool <span style="font-size:9px;color:#bbb;text-transform:none;letter-spacing:0;font-weight:400">(simplified: 16 blocks × 4 slots; real vLLM default: thousands of blocks × 16 tokens/block)</span></div>
+      <div id="free-pool"><!-- chips injected by JS --></div>
+    </div>
+    <div class="sep"></div>
+    <div id="grid-header">
+      <div class="panel-label" style="margin:0">Physical Memory Grid</div>
+      <span id="grid-note">4 KV slots / block</span>
+    </div>
+    <div id="phys-grid"><!-- blocks injected by JS --></div>
+  </div>
+</div>
+
 <div id="desc-box"></div>
 <div id="controls">
   <button class="ctrl" id="btn-prev">← Prev</button>
   <div id="dots"></div>
   <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
 </div>
 
 <script>
-// ── Canvas setup ─────────────────────────────────────────────────────────────
-const C = document.getElementById('c');
-const ctx = C.getContext('2d');
-const W = 820, H = 360;
-const DPR = (window.devicePixelRatio || 1) * 2;
-C.style.width  = W + 'px';
-C.style.height = H + 'px';
-C.width  = W * DPR;
-C.height = H * DPR;
-ctx.scale(DPR, DPR);
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const raf  = () => new Promise(r => requestAnimationFrame(r));
+const raf2 = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ── Colours ──────────────────────────────────────────────────────────────────
-const FREE  = { bg:'#f5f6fc', border:'#d4d8f0', text:'#aab', slot:'#e4e8f8' };
-const R1    = { bg:'#dbeeff', border:'#1e88e5', text:'#1e88e5', slot:'#1e88e5', lite:'#bbdcff' };
-const R2    = { bg:'#fff3e0', border:'#f57c00', text:'#f57c00', slot:'#f57c00', lite:'#ffe0b2' };
-const NEW   = '#f9a825'; // highlight colour for newly allocated blocks
-const RAINBOW = ['#e53935','#f57c00','#fb8c00','#43a047','#1e88e5','#8e24aa','#00838f'];
+const stage      = document.getElementById('stage');
+const leftPanel  = document.getElementById('left-panel');
+const gridEl     = document.getElementById('phys-grid');
+const freePoolEl = document.getElementById('free-pool');
 
-// ── Grid geometry ────────────────────────────────────────────────────────────
-const GX=442, GY=52, BW=74, BH=52, BGAP=8; // 4-col × 4-row physical grid
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function rr(x,y,w,h,r,fill,stroke,lw=1.5){
-  ctx.beginPath(); ctx.roundRect(x,y,w,h,r);
-  if(fill){ctx.fillStyle=fill;ctx.fill()}
-  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke()}
-}
-function txt(s,x,y,size,color,align='left',weight='normal'){
-  ctx.font=`${weight} ${size}px 'Segoe UI',system-ui,sans-serif`;
-  ctx.fillStyle=color; ctx.textAlign=align; ctx.fillText(s,x,y);
-}
-function arrowH(x1,y,x2,color,lw=1.5){
-  ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=lw;
-  ctx.moveTo(x1,y);ctx.lineTo(x2-8,y);ctx.stroke();
-  ctx.beginPath();ctx.fillStyle=color;
-  ctx.moveTo(x2,y);ctx.lineTo(x2-8,y-4);ctx.lineTo(x2-8,y+4);ctx.closePath();ctx.fill();
-}
-function arrowV(x,y1,y2,color,lw=1.5){
-  ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=lw;
-  ctx.moveTo(x,y1);ctx.lineTo(x,y2-7);ctx.stroke();
-  ctx.beginPath();ctx.fillStyle=color;
-  ctx.moveTo(x,y2);ctx.lineTo(x-4,y2-7);ctx.lineTo(x+4,y2-7);ctx.closePath();ctx.fill();
+// ── Build free pool chips ──────────────────────────────────────────────────────
+for (let i = 0; i < 16; i++) {
+  const chip = document.createElement('div');
+  chip.className = 'fp-chip';
+  chip.id = `fpc${i}`;
+  chip.textContent = `P${i}`;
+  freePoolEl.appendChild(chip);
 }
 
-// ── Draw a single physical block ─────────────────────────────────────────────
-// data: null (free) | {req:'r1'|'r2', filled:0-4, isNew:false}
-function drawBlock(col, row, id, data){
-  const x = GX + col*(BW+BGAP);
-  const y = GY + row*(BH+BGAP);
-  const isNew = data?.isNew;
-  const c = data ? (data.req==='r1'?R1:R2) : FREE;
+// ── Build physical grid ────────────────────────────────────────────────────────
+for (let i = 0; i < 16; i++) {
+  const b = document.createElement('div');
+  b.className = 'pb';
+  b.id = `pb${i}`;
+  b.innerHTML = `
+    <div class="pb-head">
+      <span class="pb-id">P${i}</span>
+      <span class="pb-owner" id="pbo${i}"></span>
+    </div>
+    <div class="kv-grid">
+      ${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs${i}_${s}"></div>`).join('')}
+    </div>`;
+  gridEl.appendChild(b);
+}
 
-  if(isNew){ ctx.shadowColor=NEW; ctx.shadowBlur=14; }
-  rr(x,y,BW,BH,6, c.bg, isNew?NEW:c.border, isNew?2.5:1.5);
-  ctx.shadowBlur=0;
+// ── Build request cards ────────────────────────────────────────────────────────
+const TOK_COLORS = ['#e53935','#f57c00','#43a047','#1e88e5','#8e24aa','#c2185b','#00838f'];
 
-  // Block ID
-  txt(`P${id}`,x+5,y+13,9,c.text,'left','700');
+function buildCard(req, label, nTok, lbs) {
+  const card = document.createElement('div');
+  card.className = `req-card ${req}`;
+  card.id = `card-${req}`;
 
-  // Owner label
-  if(data){
-    txt(data.req==='r1'?'Req 1':'Req 2', x+BW/2,y+13,8,c.text,'center','600');
-  } else {
-    txt('free',x+BW/2,y+13,8,'#bbbbd0','center');
+  let toks = '';
+  for (let i = 0; i < nTok; i++) {
+    const c = TOK_COLORS[i % TOK_COLORS.length];
+    toks += `<div class="tok" id="tok-${req}-${i}" style="color:${c};border-color:${c};background:${c}18">T${i+1}</div>`;
   }
 
-  // KV slots — 2×2 grid inside block
-  const SW=26,SH=12,SG=4;
-  const sx=x+(BW-(SW*2+SG))/2, sy=y+BH-2*(SH+SG)-4;
-  for(let i=0;i<4;i++){
-    const sc=i%2, sr=Math.floor(i/2);
-    const bx=sx+sc*(SW+SG), by=sy+sr*(SH+SG);
-    const filled = data && i<data.filled;
-    rr(bx,by,SW,SH,3, filled?c.slot:FREE.slot, null);
-    if(filled){
-      txt('K,V',bx+SW/2,by+SH-2,6,'#fff','center','600');
+  let rows = '';
+  lbs.forEach(lb => {
+    rows += `<div class="bt-row" id="btr-${req}-${lb}">
+      <span class="bt-lb">LB${lb}</span>
+      <span class="bt-arr">→</span>
+      <span class="bt-pb" id="btp-${req}-${lb}">—</span>
+    </div>`;
+  });
+
+  card.innerHTML = `
+    <div class="req-title">${label}</div>
+    <div class="tokens-row">${toks}</div>
+    <div class="bt-section-label">Block Table</div>
+    ${rows}`;
+  return card;
+}
+
+const cardR1 = buildCard('r1', 'Request 1  (7 tokens)', 7, [0, 1]);
+const cardR2 = buildCard('r2', 'Request 2  (6 tokens)', 6, [0, 1]);
+leftPanel.appendChild(cardR1);
+leftPanel.appendChild(cardR2);
+
+// ── Animation helpers ─────────────────────────────────────────────────────────
+
+async function showCard(req, tokDelay = 55) {
+  const card = document.getElementById(`card-${req}`);
+  card.classList.add('show');
+  await sleep(150);
+  const toks = card.querySelectorAll('.tok');
+  for (let i = 0; i < toks.length; i++) {
+    toks[i].classList.add('show');
+    if (i < toks.length - 1) await sleep(tokDelay);
+  }
+}
+
+// Fly a block chip from the free pool to its position in the physical grid
+async function flyAllocate(req, lbIdx, pbId) {
+  const color  = req === 'r1' ? '#1e88e5' : '#f57c00';
+  const fromEl = document.getElementById(`fpc${pbId}`);
+  const toEl   = document.getElementById(`pb${pbId}`);
+
+  const stRect   = stage.getBoundingClientRect();
+  const fromRect = fromEl.getBoundingClientRect();
+  const toRect   = toEl.getBoundingClientRect();
+
+  // Create floater at free pool chip position
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `
+    left:${fromRect.left - stRect.left}px;
+    top:${fromRect.top  - stRect.top}px;
+    width:${fromRect.width}px;
+    height:${fromRect.height}px;
+    background:${color}22;
+    border:2px solid ${color};
+    color:${color};
+    opacity:0;
+  `;
+  stage.appendChild(fl);
+  fromEl.classList.add('gone'); // fade out original chip
+
+  await raf2();
+  fl.style.opacity = '1';
+  await raf2();
+
+  // Morph and fly to physical block position
+  fl.style.left         = `${toRect.left   - stRect.left}px`;
+  fl.style.top          = `${toRect.top    - stRect.top}px`;
+  fl.style.width        = `${toRect.width}px`;
+  fl.style.height       = `${toRect.height}px`;
+  fl.style.borderRadius = '8px';
+
+  await sleep(720);
+
+  // Activate block
+  const blk = document.getElementById(`pb${pbId}`);
+  blk.classList.add(req, 'pulse', 'new-glow');
+  document.getElementById(`pbo${pbId}`).textContent =
+    req === 'r1' ? `R1·LB${lbIdx}` : `R2·LB${lbIdx}`;
+  fl.remove();
+
+  await sleep(400);
+  blk.classList.remove('new-glow', 'pulse');
+
+  // Update block table entry
+  const btpEl = document.getElementById(`btp-${req}-${lbIdx}`);
+  btpEl.textContent = `P${pbId}`;
+  btpEl.classList.add('set', req);
+}
+
+// Fill one KV slot, highlighting the corresponding token in the request card
+async function fillOneSlot(pbId, slotIdx, req, tokenIdx) {
+  // Pulse the token chip
+  const tokEl = document.getElementById(`tok-${req}-${tokenIdx}`);
+  if (tokEl) {
+    tokEl.classList.add('highlight');
+    await sleep(380);
+    tokEl.classList.remove('highlight');
+  }
+
+  // Pop the KV slot in
+  const slot = document.getElementById(`pvs${pbId}_${slotIdx}`);
+  slot.textContent = `T${tokenIdx + 1}`;
+  slot.classList.add('filled', 'pop');
+  slot.addEventListener('animationend', () => slot.classList.remove('pop'), { once: true });
+  await sleep(160);
+}
+
+// Batch fill multiple slots quickly (used for Request 2 to avoid repetition)
+async function fillSlotsBatch(pbId, count, startTokIdx, delayMs = 130) {
+  for (let s = 0; s < count; s++) {
+    const slot = document.getElementById(`pvs${pbId}_${s}`);
+    slot.textContent = `T${startTokIdx + s + 1}`;
+    slot.classList.add('filled', 'pop');
+    slot.addEventListener('animationend', () => slot.classList.remove('pop'), { once: true });
+    if (s < count - 1) await sleep(delayMs);
+  }
+}
+
+// ── Instant state restore (no animations) ────────────────────────────────────
+function resetAll() {
+  stage.querySelectorAll('.floater').forEach(f => f.remove());
+  for (let i = 0; i < 16; i++) {
+    const b = document.getElementById(`pb${i}`);
+    b.className = 'pb';
+    b.style = '';
+    document.getElementById(`pbo${i}`).textContent = '';
+    for (let s = 0; s < 4; s++) {
+      const sl = document.getElementById(`pvs${i}_${s}`);
+      sl.className = 'kv-slot';
+      sl.textContent = '';
+    }
+    document.getElementById(`fpc${i}`).classList.remove('gone');
+  }
+  [cardR1, cardR2].forEach(c => {
+    c.classList.remove('show');
+    c.querySelectorAll('.tok').forEach(t => t.classList.remove('show', 'highlight'));
+  });
+  ['r1','r2'].forEach(req => [0,1].forEach(lb => {
+    const el = document.getElementById(`btp-${req}-${lb}`);
+    if (el) { el.textContent = '—'; el.className = 'bt-pb'; }
+  }));
+}
+
+function setBlkInst(id, req, lbl) {
+  const b = document.getElementById(`pb${id}`);
+  b.classList.add(req);
+  document.getElementById(`pbo${id}`).textContent = lbl;
+}
+function fillSlotInst(pbId, slotIdx, label) {
+  const sl = document.getElementById(`pvs${pbId}_${slotIdx}`);
+  sl.textContent = label;
+  sl.classList.add('filled');
+}
+function setBtpInst(req, lb, pb) {
+  const el = document.getElementById(`btp-${req}-${lb}`);
+  el.textContent = `P${pb}`; el.classList.add('set', req);
+}
+function markGone(pbId) {
+  document.getElementById(`fpc${pbId}`).classList.add('gone');
+}
+function highlightFreeInst() {
+  for (let i = 0; i < 16; i++) {
+    const b = document.getElementById(`pb${i}`);
+    if (!b.classList.contains('r1') && !b.classList.contains('r2')) {
+      b.style.borderColor = '#43a047';
+      b.style.borderStyle = 'dashed';
+      b.style.background  = '#f0fff4';
     }
   }
 }
 
-// ── Draw the 4×4 physical memory grid ────────────────────────────────────────
-function drawGrid(blocks){
-  txt('GPU Physical Memory',GX,GY-10,11,'#555','left','700');
-  // free / used counts
-  const used = blocks.filter(Boolean).length;
-  txt(`${used} used · ${16-used} free`,GX+320,GY-10,9,'#999','right');
-
-  for(let i=0;i<16;i++) drawBlock(i%4,Math.floor(i/4),i,blocks[i]);
+// applyInstant(n): instantly restore cumulative state as if steps 0..n have completed
+function applyInstant(n) {
+  // Step 1: R1 card
+  if (n >= 1) {
+    cardR1.classList.add('show');
+    cardR1.querySelectorAll('.tok').forEach(t => t.classList.add('show'));
+  }
+  // Step 2: allocate P2 → R1 LB0
+  if (n >= 2) { setBlkInst(2,'r1','R1·LB0'); setBtpInst('r1',0,2); markGone(2); }
+  // Steps 3–6: fill P2 slots T1–T4
+  for (let s = 0; s < 4; s++) {
+    if (n >= 3 + s) fillSlotInst(2, s, `T${s+1}`);
+  }
+  // Step 7: allocate P9 → R1 LB1
+  if (n >= 7) { setBlkInst(9,'r1','R1·LB1'); setBtpInst('r1',1,9); markGone(9); }
+  // Steps 8–10: fill P9 slots T5–T7
+  for (let s = 0; s < 3; s++) {
+    if (n >= 8 + s) fillSlotInst(9, s, `T${s+5}`);
+  }
+  // Step 11: R2 card + allocate P5, P13
+  if (n >= 11) {
+    cardR2.classList.add('show');
+    cardR2.querySelectorAll('.tok').forEach(t => t.classList.add('show'));
+    setBlkInst(5,'r2','R2·LB0');  setBtpInst('r2',0,5);  markGone(5);
+    setBlkInst(13,'r2','R2·LB1'); setBtpInst('r2',1,13); markGone(13);
+  }
+  // Step 12: fill R2 blocks
+  if (n >= 12) {
+    for (let s = 0; s < 4; s++) fillSlotInst(5,  s, `T${s+1}`);
+    for (let s = 0; s < 2; s++) fillSlotInst(13, s, `T${s+5}`);
+  }
+  // Step 13: highlight free blocks
+  if (n >= 13) { highlightFreeInst(); }
 }
 
-// ── Draw token row with block-bracket annotations ─────────────────────────────
-// tokens: array of strings
-// groups: array of {label, count, color}  — consecutive groups
-function drawTokenRow(x, y, tokens, groups){
-  const TW=44,TH=28,TG=5;
-  tokens.forEach((tok,i)=>{
-    const c=RAINBOW[i%RAINBOW.length];
-    rr(x+i*(TW+TG),y,TW,TH,4,c+'28',c,1.5);
-    txt(tok,x+i*(TW+TG)+TW/2,y+19,10,c,'center','700');
-  });
-  // Group brackets
-  let offset=0;
-  groups.forEach(g=>{
-    const bx=x+offset*(TW+TG);
-    const bw=g.count*(TW+TG)-TG;
-    // bracket line
-    ctx.beginPath();ctx.strokeStyle=g.color;ctx.lineWidth=1.5;
-    ctx.moveTo(bx,y+TH+6);ctx.lineTo(bx,y+TH+12);
-    ctx.lineTo(bx+bw,y+TH+12);ctx.lineTo(bx+bw,y+TH+6);ctx.stroke();
-    txt(g.label,bx+bw/2,y+TH+24,9,g.color,'center','700');
-    offset+=g.count;
-  });
-}
-
-// ── Draw block table for one request ─────────────────────────────────────────
-// table: [{lb,pb,isNew}]
-function drawBlockTable(x, y, label, color, table){
-  const RW=82, RH=22, PAD=10, HDR=20;
-  const TW2=RW*2+PAD*3, TH2=HDR+table.length*RH+6;
-
-  rr(x,y,TW2,TH2,7,'#f8f9ff',color+'55',1.5);
-  txt(label,x+TW2/2,y+14,10,color,'center','700');
-
-  // Header row
-  txt('Logical',x+PAD+RW/2,y+HDR+14,9,'#888','center','600');
-  txt('Physical',x+PAD*2+RW+RW/2,y+HDR+14,9,'#888','center','600');
-
-  table.forEach((row,i)=>{
-    const ry=y+HDR+RH+6+i*RH;
-    const isNew=row.isNew;
-    // LB cell
-    rr(x+PAD,ry,RW,RH-3,4,color+'18',color,1.2);
-    txt(`LB${row.lb}`,x+PAD+RW/2,ry+13,10,color,'center','700');
-    // Arrow
-    arrowH(x+PAD+RW+4,ry+RH/2-1.5,x+PAD*2+RW+4,color,1.4);
-    // PB cell
-    if(row.pb!==null){
-      const pbColor=isNew?NEW:color;
-      if(isNew){ctx.shadowColor=NEW;ctx.shadowBlur=8;}
-      rr(x+PAD*2+RW,ry,RW,RH-3,4,isNew?'#fff8e1':color+'18',pbColor,isNew?2:1.2);
-      ctx.shadowBlur=0;
-      txt(`P${row.pb}`,x+PAD*2+RW+RW/2,ry+13,10,pbColor,'center','700');
-    } else {
-      rr(x+PAD*2+RW,ry,RW,RH-3,4,'#f5f5f5','#ccc',1);
-      txt('—',x+PAD*2+RW+RW/2,ry+13,10,'#bbb','center');
-    }
-  });
-}
-
-// ── Step definitions ─────────────────────────────────────────────────────────
-// blocks: 16-element array; null = free, else {req,filled,isNew}
+// ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
-
-  // ── 0 ──────────────────────────────────────────────────────────────────────
-  { title: 'Physical Block Pool',
-    desc: 'PagedAttention pre-divides GPU memory into 16 fixed-size physical blocks (here each block holds 4 KV-vector slots). All blocks start in the free pool — no memory is reserved for any request yet.',
-    render(){
-      drawGrid(Array(16).fill(null));
-      // Left: explanation graphic
-      txt('GPU Memory Layout', 22, 62, 13, '#1a1d3e', 'left', '700');
-      rr(22,78,360,200,10,'#f8f9ff','#d0d4ef',1.5);
-      txt('16 physical blocks, each with 4 KV slots',22+180,78+26,11,'#555','center');
-      txt('Block size = 4 tokens × (K + V vectors)',22+180,78+46,10,'#888','center');
-      // Slot legend
-      rr(50,148,30,16,3,R1.slot,null); txt('Occupied',86,161,10,R1.text);
-      rr(50,172,30,16,3,FREE.slot,null); txt('Free slot',86,185,10,'#888');
-      // Stats
-      rr(22,295,360,48,8,'#fff','#e0e4f8',1.5);
-      txt('16 blocks × 4 slots = 64 KV-vector capacity',22+180,315,11,'#555','center');
-      txt('All blocks in free pool — ready to allocate',22+180,333,10,'#888','center');
+  {
+    desc: 'GPU memory is pre-divided into 16 physical blocks, each holding 4 KV-vector slots (one slot = one token\'s K+V vectors). All 16 chips in the Free Pool above are available. Note: these numbers are simplified — vLLM\'s default is 16 tokens/block and thousands of blocks per GPU.',
+    async run() {}
+  },
+  {
+    desc: 'Request 1 arrives with a 7-token prompt. The block table creates two logical block entries: LB0 will hold tokens T1–T4, LB1 will hold T5–T7. No physical memory is touched yet.',
+    async run() { await showCard('r1'); }
+  },
+  {
+    desc: 'LB0 needs a physical block. P2 is popped from the free pool — watch its chip fly down to its slot in the memory grid. The block table records LB0 → P2.',
+    async run() { await flyAllocate('r1', 0, 2); }
+  },
+  {
+    desc: 'T1 is processed. Its Key vector K₁ and Value vector V₁ are stored into P2\'s first slot. This is the KV cache: future attention over T1 reads these cached vectors instead of recomputing them.',
+    async run() { await fillOneSlot(2, 0, 'r1', 0); }
+  },
+  {
+    desc: 'T2 → P2 slot 1. K₂ and V₂ are cached. P2 is now 2/4 full. During generation, attending to any past token is O(1) memory read — no recomputation.',
+    async run() { await fillOneSlot(2, 1, 'r1', 1); }
+  },
+  {
+    desc: 'T3 → P2 slot 2. P2 is 3/4 full.',
+    async run() { await fillOneSlot(2, 2, 'r1', 2); }
+  },
+  {
+    desc: 'T4 → P2 slot 3. P2 is now completely full (4/4). The next token cannot fit here — a new physical block must be allocated.',
+    async run() { await fillOneSlot(2, 3, 'r1', 3); }
+  },
+  {
+    desc: 'P2 is full, so P9 is popped from the free pool for LB1. P9 is not adjacent to P2 — physical blocks can be scattered anywhere. The block table entry LB1 → P9 handles all address translation transparently.',
+    async run() { await flyAllocate('r1', 1, 9); }
+  },
+  {
+    desc: 'T5 → P9 slot 0. Execution crosses a block boundary seamlessly: the attention kernel looks up LB1 → P9 in the block table and reads K₅V₅ from P9.',
+    async run() { await fillOneSlot(9, 0, 'r1', 4); }
+  },
+  {
+    desc: 'T6 → P9 slot 1.',
+    async run() { await fillOneSlot(9, 1, 'r1', 5); }
+  },
+  {
+    desc: 'T7, the last prompt token, fills P9\'s third slot. P9 has one empty slot remaining — reserved for the first generated token. No pre-allocation needed for the rest of the potential sequence.',
+    async run() { await fillOneSlot(9, 2, 'r1', 6); }
+  },
+  {
+    desc: 'Request 2 arrives with 6 tokens and gets P5 (LB0) and P13 (LB1) from the free pool. These blocks are scattered and non-contiguous. Each request has its own isolated block table — no interference between requests.',
+    async run() {
+      await showCard('r2');
+      await flyAllocate('r2', 0, 5);
+      await flyAllocate('r2', 1, 13);
     }
   },
-
-  // ── 1 ──────────────────────────────────────────────────────────────────────
-  { title: 'Request 1 Arrives',
-    desc: 'A request with a 7-token prompt arrives. PagedAttention assigns logical block IDs: LB0 will hold tokens 1–4, LB1 will hold tokens 5–8. Physical blocks are NOT yet allocated — just the logical structure is created.',
-    render(){
-      drawGrid(Array(16).fill(null));
-      txt('Request 1',22,62,13,'#1e88e5','left','700');
-      const toks=['T1','T2','T3','T4','T5','T6','T7'];
-      drawTokenRow(22,80,toks,[
-        {label:'LB0 (slots 1-4)',count:4,color:'#1e88e5'},
-        {label:'LB1 (slots 5-8)',count:3,color:'#1e88e5'},
-      ]);
-      txt('7 prompt tokens → 2 logical blocks',22,148,10,'#888');
-      drawBlockTable(22,168,'Block Table — Request 1','#1e88e5',[
-        {lb:0,pb:null},{lb:1,pb:null}
-      ]);
-      rr(22,280,360,38,8,'#fffde7','#f9a82555',1.5);
-      txt('Physical blocks not allocated yet — happening next →',22+180,303,10,'#f57f17','center','600');
+  {
+    desc: 'Request 2\'s tokens fill P5 completely (T1–T4, 4/4) and P13 partially (T5–T6, 2/4). Two concurrent requests, blocks scattered anywhere in GPU memory, all tracked by per-request block tables.',
+    async run() {
+      await fillSlotsBatch(5,  4, 0, 130);
+      await fillSlotsBatch(13, 2, 4, 130);
     }
   },
-
-  // ── 2 ──────────────────────────────────────────────────────────────────────
-  { title: 'Allocate Physical Block P2 → LB0',
-    desc: 'The PagedAttention kernel picks the first free block (P2) from the pool and writes it into the block table: LB0 → P2. The block is now owned by Request 1 but all 4 KV slots are still empty.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>i===2?{req:'r1',filled:0,isNew:true}:null);
-      drawGrid(blocks);
-      txt('Request 1',22,62,13,'#1e88e5','left','700');
-      const toks=['T1','T2','T3','T4','T5','T6','T7'];
-      drawTokenRow(22,80,toks,[
-        {label:'LB0',count:4,color:'#1e88e5'},
-        {label:'LB1',count:3,color:'#1e88e5'},
-      ]);
-      drawBlockTable(22,168,'Block Table — Request 1','#1e88e5',[
-        {lb:0,pb:2,isNew:true},{lb:1,pb:null}
-      ]);
-      // Arrow from block table to grid
-      ctx.save();ctx.globalAlpha=0.55;ctx.setLineDash([4,3]);
-      ctx.strokeStyle=NEW;ctx.lineWidth=1.5;
-      ctx.beginPath();ctx.moveTo(290,210);ctx.lineTo(GX+2*BW+2*BGAP+BW/2,GY+14);ctx.stroke();
-      ctx.setLineDash([]);ctx.restore();
-      rr(22,280,360,38,8,'#dbeeff','#1e88e5',1.5);
-      txt('P2 allocated · 0 / 4 KV slots filled',22+180,303,11,'#1e88e5','center','600');
-    }
-  },
-
-  // ── 3 ──────────────────────────────────────────────────────────────────────
-  { title: 'Fill LB0 (P2) — KV Pairs Stored',
-    desc: 'The model processes prompt tokens T1–T4. For each token, the Key and Value vectors are computed and written into the 4 slots of block P2. P2 is now completely full.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>i===2?{req:'r1',filled:4}:null);
-      drawGrid(blocks);
-      txt('Request 1',22,62,13,'#1e88e5','left','700');
-      const toks=['T1','T2','T3','T4','T5','T6','T7'];
-      drawTokenRow(22,80,toks,[
-        {label:'LB0  ✓ full',count:4,color:'#1e88e5'},
-        {label:'LB1',count:3,color:'#1e88e5'},
-      ]);
-      drawBlockTable(22,168,'Block Table — Request 1','#1e88e5',[
-        {lb:0,pb:2},{lb:1,pb:null}
-      ]);
-      rr(22,280,360,38,8,'#dbeeff','#1e88e5',1.5);
-      txt('P2 full: 4 / 4 KV slots stored',22+180,303,11,'#1e88e5','center','600');
-    }
-  },
-
-  // ── 4 ──────────────────────────────────────────────────────────────────────
-  { title: 'P2 Full → Allocate P9 for LB1',
-    desc: 'Block P2 is full. PagedAttention allocates the next free block, P9, for LB1. P9 is not adjacent to P2 — physical blocks can be anywhere in memory. The block table handles the indirection transparently.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>{
-        if(i===2) return {req:'r1',filled:4};
-        if(i===9) return {req:'r1',filled:0,isNew:true};
-        return null;
-      });
-      drawGrid(blocks);
-      txt('Request 1',22,62,13,'#1e88e5','left','700');
-      const toks=['T1','T2','T3','T4','T5','T6','T7'];
-      drawTokenRow(22,80,toks,[
-        {label:'LB0  ✓',count:4,color:'#43a047'},
-        {label:'LB1 → P9',count:3,color:'#1e88e5'},
-      ]);
-      drawBlockTable(22,168,'Block Table — Request 1','#1e88e5',[
-        {lb:0,pb:2},{lb:1,pb:9,isNew:true}
-      ]);
-      // dashed connection
-      ctx.save();ctx.globalAlpha=0.5;ctx.setLineDash([4,3]);
-      ctx.strokeStyle=NEW;ctx.lineWidth=1.5;
-      ctx.beginPath();ctx.moveTo(290,232);ctx.lineTo(GX+1*BW+1*BGAP+BW/2,GY+2*(BH+BGAP)+14);ctx.stroke();
-      ctx.setLineDash([]);ctx.restore();
-      rr(22,280,360,38,8,'#fffde7','#f9a82555',1.5);
-      txt('P9 ≠ adjacent to P2 — non-contiguous is fine!',22+180,303,11,'#f57f17','center','600');
-    }
-  },
-
-  // ── 5 ──────────────────────────────────────────────────────────────────────
-  { title: 'Fill LB1 (P9) — Partial Block',
-    desc: 'Tokens T5, T6, T7 fill 3 of the 4 slots in P9. The last slot stays empty until the next token is generated. Partial blocks are allowed — no internal fragmentation pressure.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>{
-        if(i===2) return {req:'r1',filled:4};
-        if(i===9) return {req:'r1',filled:3};
-        return null;
-      });
-      drawGrid(blocks);
-      txt('Request 1',22,62,13,'#1e88e5','left','700');
-      const toks=['T1','T2','T3','T4','T5','T6','T7','…'];
-      drawTokenRow(22,80,toks,[
-        {label:'LB0  ✓ full',count:4,color:'#43a047'},
-        {label:'LB1  3/4 filled',count:4,color:'#1e88e5'},
-      ]);
-      drawBlockTable(22,168,'Block Table — Request 1','#1e88e5',[
-        {lb:0,pb:2},{lb:1,pb:9}
-      ]);
-      rr(22,280,360,38,8,'#dbeeff','#1e88e5',1.5);
-      txt('P9: 3 / 4 slots used  ·  1 slot reserved for next token',22+180,303,10,'#1e88e5','center','600');
-    }
-  },
-
-  // ── 6 ──────────────────────────────────────────────────────────────────────
-  { title: 'Request 2 Arrives — Gets P5 and P13',
-    desc: 'A second request arrives independently. It gets physical blocks P5 and P13 from the free pool — neither adjacent to each other nor to Request 1\'s blocks. Each request has its own isolated block table.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>{
-        if(i===2) return {req:'r1',filled:4};
-        if(i===9) return {req:'r1',filled:3};
-        if(i===5) return {req:'r2',filled:0,isNew:true};
-        if(i===13) return {req:'r2',filled:0,isNew:true};
-        return null;
-      });
-      drawGrid(blocks);
-      // Two compact tables side by side
-      drawBlockTable(22,62,'Block Table — Req 1','#1e88e5',[
-        {lb:0,pb:2},{lb:1,pb:9}
-      ]);
-      drawBlockTable(22,168,'Block Table — Req 2','#f57c00',[
-        {lb:0,pb:5,isNew:true},{lb:1,pb:13,isNew:true}
-      ]);
-      rr(22,280,360,38,8,'#fff3e0','#f57c00',1.5);
-      txt('P5 and P13 are scattered — OK, that\'s the point!',22+180,303,10,'#f57c00','center','600');
-    }
-  },
-
-  // ── 7 ──────────────────────────────────────────────────────────────────────
-  { title: 'Both Requests Coexist',
-    desc: 'Request 1 occupies P2 (full) and P9 (3/4). Request 2 occupies P5 (full) and P13 (2/4). Their blocks are interleaved in GPU memory. Attention is correct because each request\'s block table points to the right physical addresses.',
-    render(){
-      const blocks=Array(16).fill(null).map((_,i)=>{
-        if(i===2) return {req:'r1',filled:4};
-        if(i===9) return {req:'r1',filled:3};
-        if(i===5) return {req:'r2',filled:4};
-        if(i===13) return {req:'r2',filled:2};
-        return null;
-      });
-      drawGrid(blocks);
-      drawBlockTable(22,62,'Block Table — Req 1','#1e88e5',[
-        {lb:0,pb:2},{lb:1,pb:9}
-      ]);
-      drawBlockTable(22,168,'Block Table — Req 2','#f57c00',[
-        {lb:0,pb:5},{lb:1,pb:13}
-      ]);
-      // Usage summary
-      rr(22,282,360,50,8,'#f8f9ff','#c0c8e8',1.5);
-      txt('Memory in use:',32,300,10,'#555','left','700');
-      rr(130,290,16,10,2,R1.slot,null); txt('Req 1: P2,P9',150,300,10,R1.text);
-      rr(256,290,16,10,2,R2.slot,null); txt('Req 2: P5,P13',276,300,10,R2.text);
-      txt('12 / 16 blocks still free  →  room for 3+ more requests',22+180,322,10,'#555','center');
-    }
-  },
-
-  // ── 8 ──────────────────────────────────────────────────────────────────────
-  { title: 'Memory Efficiency: Paged vs Contiguous',
-    desc: 'Traditional servers reserve a contiguous max_seq_len chunk per request — most is wasted. PagedAttention allocates only the blocks actually needed. Memory utilization jumps from ~20–40% → over 95%, enabling far more concurrent requests.',
-    render(){
-      // ── Left: Contiguous (wasted) ──────────────────────────────────────
-      const lx=22, ly=52, lw=370, barsY=82, barW=330;
-      txt('Contiguous Allocation  ❌',lx+lw/2,ly,12,'#e53935','center','700');
-      const contReqs=[
-        {label:'Req A',used:0.22,color:'#e53935'},
-        {label:'Req B',used:0.68,color:'#f57c00'},
-        {label:'Req C',used:0.15,color:'#8e24aa'},
-      ];
-      contReqs.forEach((r,i)=>{
-        const by=barsY+i*74, bh=52;
-        // Full reserved bar
-        rr(lx+20,by,barW,bh,5,'#f5f5ff','#d0d4ef',1.5);
-        txt(r.label,lx+14,by+bh/2+4,10,'#555','right','600');
-        txt('max reserved',lx+20+barW+4,by+bh/2+4,8,'#bbb','left');
-        // Used portion
-        rr(lx+20,by,barW*r.used,bh,5,r.color+'33',r.color,1.5);
-        txt(`${Math.round(r.used*100)}%`,lx+20+barW*r.used/2,by+bh/2+5,10,r.color,'center','700');
-        // Wasted
-        if(barW*(1-r.used)>30){
-          rr(lx+20+barW*r.used+2,by+4,barW*(1-r.used)-6,bh-8,4,'#fee8e8','#e5393566',1);
-          txt(`${Math.round((1-r.used)*100)}% wasted`,lx+20+barW*r.used+barW*(1-r.used)/2,by+bh/2+4,9,'#e53935','center');
-        }
-      });
-      const avgUsed=(contReqs.reduce((s,r)=>s+r.used,0)/contReqs.length);
-      rr(lx+20,barsY+3*74,barW,28,6,'#fff0f0','#e5393544',1.5);
-      txt(`Average utilization: ${Math.round(avgUsed*100)}%  ·  Waste: ${Math.round((1-avgUsed)*100)}%`,lx+20+barW/2,barsY+3*74+18,10,'#e53935','center','700');
-
-      // ── Right: Paged (efficient) ───────────────────────────────────────
-      const rx=430;
-      txt('PagedAttention  ✓',rx+(W-rx-22)/2,ly,12,'#43a047','center','700');
-      // Mini grid showing tight packing
-      const MBW=56, MBH=40, MBG=6, MGX=rx+18, MGY=barsY-6;
-      const miniBlocks=[
-        {req:'r1',filled:4},{req:'r2',filled:4},{req:'r1',filled:3},{req:'r2',filled:4},
-        {req:'r2',filled:2},{req:'r1',filled:4},{req:'r2',filled:3},null,
-        null,null,null,null,
-        null,null,null,null,
-      ];
-      for(let i=0;i<16;i++){
-        const mc=i%4, mr=Math.floor(i/4);
-        const mx=MGX+mc*(MBW+MBG), my=MGY+mr*(MBH+MBG);
-        const d=miniBlocks[i];
-        const c=d?(d.req==='r1'?R1:R2):FREE;
-        rr(mx,my,MBW,MBH,4,c.bg,c.border,1.2);
-        if(!d){txt('free',mx+MBW/2,my+MBH/2+4,7,'#bbb','center');}
-        else{
-          txt(d.req==='r1'?'R1':'R2',mx+MBW/2,my+14,8,c.text,'center','700');
-          // slots
-          const sw=11,sh=8,sg=2,ssx=mx+(MBW-2*sw-sg)/2,ssy=my+MBH-2*(sh+sg)-3;
-          for(let s=0;s<4;s++){
-            const ss=s%2,sr=Math.floor(s/2);
-            rr(ssx+ss*(sw+sg),ssy+sr*(sh+sg),sw,sh,2,s<d.filled?c.slot:FREE.slot,null);
-          }
-        }
-      }
-      // Legend and stats
-      const statsY=barsY+3*74;
-      rr(rx+18,statsY,W-rx-40,28,6,'#e8f5e9','#43a04744',1.5);
-      txt('Utilization: ~95%  ·  Waste: <5%',rx+18+(W-rx-40)/2,statsY+18,10,'#43a047','center','700');
-    }
+  {
+    desc: 'Result: 4 blocks in use, 12 still free (shown in green). Contiguous allocation would pre-reserve max_seq_len blocks per request regardless of actual usage — wasting 60–80% of GPU memory. PagedAttention\'s paging eliminates this waste, enabling ~3× higher inference throughput.',
+    async run() { highlightFreeInst(); }
   },
 ];
 
-// ── State & controls ─────────────────────────────────────────────────────────
-let step=0, alpha=1, animId=null;
+// ── Navigation engine ─────────────────────────────────────────────────────────
+let cur = 0;
+let busy = false;
+let playActive = false;
 
-function goTo(n){
-  if(n<0||n>=STEPS.length)return;
-  step=n; alpha=0;
-  if(animId)cancelAnimationFrame(animId);
-  fade();
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true;
+  setUI(false);
+
+  if (n <= cur) {
+    resetAll();
+    applyInstant(n);
+  } else {
+    if (n - cur > 1) { resetAll(); applyInstant(n - 1); }
+    await STEPS[n].run();
+  }
+
+  cur = n;
+  busy = false;
   updateUI();
 }
-function fade(){
-  alpha=Math.min(1,alpha+0.07);
-  render();
-  if(alpha<1) animId=requestAnimationFrame(fade);
-}
-function render(){
-  ctx.clearRect(0,0,W,H);
-  ctx.save(); ctx.globalAlpha=alpha;
-  STEPS[step].render();
-  // Step title inside canvas (top left)
-  ctx.restore();
-}
-function updateUI(){
-  document.getElementById('step-pill').textContent=`Step ${step+1} / ${STEPS.length}`;
-  document.getElementById('desc-box').textContent=STEPS[step].desc;
-  document.getElementById('btn-prev').disabled=step===0;
-  document.getElementById('btn-next').disabled=step===STEPS.length-1;
-  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===step));
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+
+  while (cur < STEPS.length - 1 && playActive) {
+    await goTo(cur + 1);
+    await sleep(900);
+  }
+  endPlay();
 }
 
-// Build dots
-const dotsEl=document.getElementById('dots');
-STEPS.forEach((_,i)=>{
-  const d=document.createElement('div');
-  d.className='dot'+(i===0?' active':'');
-  d.addEventListener('click',()=>goTo(i));
-  dotsEl.appendChild(d);
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All';
+  btn.style.background = '#43a047';
+  btn.onclick = playAll;
+  updateUI();
+}
+
+function setUI(enabled) {
+  ['btn-prev','btn-next','btn-play'].forEach(id => {
+    document.getElementById(id).disabled = !enabled;
+  });
+}
+
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur + 1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+// Dots
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
 });
 
-document.getElementById('btn-prev').addEventListener('click',()=>goTo(step-1));
-document.getElementById('btn-next').addEventListener('click',()=>goTo(step+1));
-document.addEventListener('keydown',e=>{
-  if(e.key==='ArrowRight'||e.key===' ')goTo(step+1);
-  if(e.key==='ArrowLeft')goTo(step-1);
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); goTo(cur - 1); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); goTo(cur + 1); });
+document.getElementById('btn-play').addEventListener('click', playAll);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); stopPlay(); goTo(cur + 1); }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); stopPlay(); goTo(cur - 1); }
 });
 
-// Initial render
 updateUI();
-render();
 </script>
 </body>
 </html>
