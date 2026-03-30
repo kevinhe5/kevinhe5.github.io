@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Parallel Sampling — vLLM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#0891b2;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;overflow:hidden;
+}
+
+#left-panel{
+  width:260px;flex-shrink:0;padding:16px 14px;
+  display:flex;flex-direction:column;gap:8px;
+  border-right:1px solid #e8eaf6;
+}
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+
+.sample-card{
+  border-radius:8px;border:1.5px solid transparent;
+  padding:9px 11px;
+  opacity:0;transform:translateX(-12px);
+  transition:opacity 320ms ease,transform 320ms ease;
+  flex-shrink:0;
+}
+.sample-card.show{opacity:1;transform:translateX(0)}
+.sample-label{font-size:11px;font-weight:700;margin-bottom:5px}
+.token-row{display:flex;flex-wrap:wrap;gap:4px;min-height:20px}
+.tok{
+  font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
+  opacity:0;transform:scale(0.5);
+  transition:opacity 200ms ease,transform 200ms cubic-bezier(.34,1.56,.64,1);
+}
+.tok.show{opacity:1;transform:scale(1)}
+.tok.prompt{background:#e8eaf6;color:#0891b2}
+.tok.done{opacity:.35!important;text-decoration:line-through}
+
+#right-panel{flex:1;padding:16px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+
+#shared-zone{
+  border-radius:10px;border:2px dashed #c0c8e8;background:#f5f7ff;
+  padding:10px 12px;flex-shrink:0;
+  transition:border-color 400ms ease,background 400ms ease,box-shadow 400ms ease;
+}
+#shared-zone.active{border-color:#0891b2;background:#ecfeff;box-shadow:0 0 0 4px #0891b225}
+.zone-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.zone-title{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px}
+#ref-badge{
+  font-size:10px;font-weight:700;color:#fff;background:#0891b2;
+  padding:2px 10px;border-radius:10px;
+  opacity:0;transition:opacity 300ms ease,background 400ms ease;
+}
+#ref-badge.show{opacity:1}
+
+#shared-blocks{display:flex;gap:8px}
+
+.pb{
+  border-radius:7px;border:1.5px solid #d4d8f0;background:#f5f6fc;
+  padding:5px 6px;display:flex;flex-direction:column;gap:3px;
+  transition:background 350ms ease,border-color 350ms ease;
+  min-width:72px;
+}
+.pb.pulse{animation:blkPulse 500ms ease-out}
+@keyframes blkPulse{0%{transform:scale(1)}45%{transform:scale(1.06)}100%{transform:scale(1)}}
+.pb.shared-blk{background:#cffafe;border-color:#0891b2}
+.pb.s1{background:#dbeeff;border-color:#1e88e5}
+.pb.s2{background:#fce4ec;border-color:#e53935}
+.pb.s3{background:#e8f5e9;border-color:#43a047}
+
+.pb-head{display:flex;justify-content:space-between;align-items:center}
+.pb-id{font-size:8px;font-weight:700;color:#bbb}
+.pb.shared-blk .pb-id{color:#0891b2}
+.pb.s1 .pb-id{color:#1e88e5}.pb.s2 .pb-id{color:#e53935}.pb.s3 .pb-id{color:#43a047}
+.pb-owner{font-size:7px;font-weight:600;color:#ccc}
+.pb.shared-blk .pb-owner{color:#0891b2}
+.pb.s1 .pb-owner{color:#1565c0}.pb.s2 .pb-owner{color:#b71c1c}.pb.s3 .pb-owner{color:#1b5e20}
+
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;flex:1}
+.kv-slot{border-radius:3px;background:#e4e8f4;min-height:11px;transition:background 200ms ease}
+.pb.shared-blk .kv-slot.filled{background:#0891b2}
+.pb.s1 .kv-slot.filled{background:#1e88e5}
+.pb.s2 .kv-slot.filled{background:#e53935}
+.pb.s3 .kv-slot.filled{background:#43a047}
+.kv-slot.pop{animation:slotPop 280ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+
+#private-zone{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0}
+#private-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;flex:1;align-content:start}
+
+#savings-box{
+  border-radius:8px;background:#ecfeff;border:1.5px solid #a5f3fc;
+  padding:9px 12px;flex-shrink:0;font-size:.82rem;color:#0e7490;line-height:1.55;
+  opacity:0;transition:opacity 400ms ease;
+}
+#savings-box.show{opacity:1}
+
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #0891b2;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#0891b2;color:#fff}
+#btn-next:hover:not(:disabled){background:#0e7490}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#0891b2;color:#fff}
+#btn-play:hover:not(:disabled){background:#0e7490}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#0891b2;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Parallel Sampling</h1>
+  </div>
+  <span id="step-pill">Step 1 / 8</span>
+</div>
+
+<div id="stage">
+  <div id="left-panel">
+    <div class="panel-label">Output samples (N = 3)</div>
+  </div>
+  <div id="right-panel">
+    <div id="shared-zone">
+      <div class="zone-header">
+        <span class="zone-title">Shared Prompt KV Blocks</span>
+        <span id="ref-badge">ref count: 3</span>
+      </div>
+      <div id="shared-blocks"></div>
+    </div>
+    <div id="private-zone">
+      <div class="panel-label">Private Decode Blocks — one per sample</div>
+      <div id="private-grid"></div>
+    </div>
+    <div id="savings-box"></div>
+  </div>
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const stage     = document.getElementById('stage');
+const leftPanel = document.getElementById('left-panel');
+
+const PROMPT = ['The','quick','fox','leaps'];
+const SAMPLES = [
+  { id:'s1', label:'Sample 1', color:'#1e88e5', bg:'#dbeeff', tokens:['over','the','old','fence'] },
+  { id:'s2', label:'Sample 2', color:'#e53935', bg:'#fce4ec', tokens:['high','above','the','clouds'] },
+  { id:'s3', label:'Sample 3', color:'#43a047', bg:'#e8f5e9', tokens:['across','the','river','fast'] },
+];
+// P0 = shared prompt block; P1=S1, P2=S2, P3=S3; P4-P7 free
+const N_TOTAL = 8;
+
+// Build sample cards
+SAMPLES.forEach(s => {
+  const card = document.createElement('div');
+  card.className = 'sample-card';
+  card.id = `card-${s.id}`;
+  card.style.cssText = `border-color:${s.color};background:${s.bg}33`;
+  card.innerHTML = `
+    <div class="sample-label" style="color:${s.color}">${s.label}</div>
+    <div style="font-size:8px;color:#aaa;margin-bottom:3px">Generated tokens:</div>
+    <div class="token-row" id="trow-${s.id}"></div>`;
+  leftPanel.appendChild(card);
+});
+
+// Build shared block P0
+const sharedBlocksEl = document.getElementById('shared-blocks');
+const pb0 = document.createElement('div');
+pb0.className = 'pb shared-blk';
+pb0.id = 'pb0';
+pb0.innerHTML = `
+  <div class="pb-head">
+    <span class="pb-id">P0</span>
+    <span class="pb-owner" id="pbo0">prompt</span>
+  </div>
+  <div class="kv-grid">${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs0_${s}"></div>`).join('')}</div>`;
+sharedBlocksEl.appendChild(pb0);
+
+// Build private blocks P1-P7
+const privateGrid = document.getElementById('private-grid');
+for (let i = 1; i < N_TOTAL; i++) {
+  const b = document.createElement('div');
+  b.className = 'pb';
+  b.id = `pb${i}`;
+  b.innerHTML = `
+    <div class="pb-head">
+      <span class="pb-id">P${i}</span>
+      <span class="pb-owner" id="pbo${i}"></span>
+    </div>
+    <div class="kv-grid">${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs${i}_${s}"></div>`).join('')}</div>`;
+  privateGrid.appendChild(b);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setBlock(pbId, cls, ownerLabel) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls);
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  for (let s = 0; s < 4; s++) document.getElementById(`pvs${pbId}_${s}`).classList.add('filled');
+}
+function clearBlock(pbId) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.className = 'pb';
+  document.getElementById(`pbo${pbId}`).textContent = '';
+  for (let s = 0; s < 4; s++) document.getElementById(`pvs${pbId}_${s}`).className = 'kv-slot';
+}
+async function fillBlock(pbId, cls, ownerLabel, delay=60) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls,'pulse');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  await sleep(120); b.classList.remove('pulse');
+  for (let s = 0; s < 4; s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.classList.add('filled','pop');
+    sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+    if (s < 3) await sleep(delay);
+  }
+}
+async function partialFill(pbId, cls, ownerLabel, nSlots) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls,'pulse');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  await sleep(100); b.classList.remove('pulse');
+  for (let s = 0; s < nSlots; s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.classList.add('filled','pop');
+    sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+    if (s < nSlots-1) await sleep(60);
+  }
+}
+
+function addToken(sid, text, isPrompt=false) {
+  const def = SAMPLES.find(s=>s.id===sid);
+  const tok = document.createElement('span');
+  tok.className = 'tok' + (isPrompt?' prompt':'');
+  if (!isPrompt) tok.style.cssText = `background:${def.bg};color:${def.color}`;
+  tok.textContent = text;
+  document.getElementById(`trow-${sid}`).appendChild(tok);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>tok.classList.add('show')));
+}
+
+function setRefBadge(n) {
+  const el = document.getElementById('ref-badge');
+  if (n > 0) { el.textContent = `ref count: ${n}`; el.classList.add('show'); }
+  else el.classList.remove('show');
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  for (let i = 0; i < N_TOTAL; i++) clearBlock(i);
+  document.getElementById('pb0').classList.add('shared-blk');
+  document.getElementById('pbo0').textContent = 'prompt';
+  document.getElementById('pbo0').style.color = '#0891b2';
+  document.querySelectorAll('.sample-card').forEach(c=>c.classList.remove('show'));
+  SAMPLES.forEach(s => { document.getElementById(`trow-${s.id}`).innerHTML=''; });
+  setRefBadge(0);
+  document.getElementById('shared-zone').classList.remove('active');
+  const sb = document.getElementById('savings-box');
+  sb.classList.remove('show'); sb.textContent='';
+}
+
+function applyInstant(n) {
+  if (n < 1) return;
+  // Step 1: prompt fills P0
+  document.getElementById('pb0').classList.add('shared-blk');
+  for (let s=0;s<4;s++) document.getElementById(`pvs0_${s}`).classList.add('filled');
+  if (n >= 2) {
+    document.getElementById('shared-zone').classList.add('active');
+    setRefBadge(3);
+    SAMPLES.forEach(s => {
+      document.getElementById(`card-${s.id}`).classList.add('show');
+      PROMPT.forEach(t => addToken(s.id, t, true));
+    });
+  }
+  if (n >= 3) {
+    setBlock(1,'s1','S1·LB0');
+    addToken('s1', SAMPLES[0].tokens[0]);
+  }
+  if (n >= 4) {
+    setBlock(2,'s2','S2·LB0'); addToken('s2', SAMPLES[1].tokens[0]);
+    setBlock(3,'s3','S3·LB0'); addToken('s3', SAMPLES[2].tokens[0]);
+  }
+  if (n >= 5) {
+    SAMPLES.forEach((s,i) => {
+      s.tokens.slice(1).forEach(t => addToken(s.id, t));
+      for (let sl=1;sl<4;sl++) document.getElementById(`pvs${i+1}_${sl}`).classList.add('filled');
+    });
+  }
+  if (n >= 6) {
+    // S1 finishes
+    clearBlock(1);
+    document.getElementById(`trow-s1`).querySelectorAll('.tok:not(.prompt)').forEach(t=>t.classList.add('done'));
+    setRefBadge(2);
+  }
+  if (n >= 7) {
+    const sb = document.getElementById('savings-box');
+    sb.textContent = 'Memory saved: without sharing, 3 samples × 1 prompt block = 3 blocks for the prompt alone. With PagedAttention: 1 shared block + 3 private decode blocks = 4 total. Prompt KV memory reduced 67%. Savings scale with both prompt length and N.';
+    sb.classList.add('show');
+  }
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Parallel sampling generates N independent completions from the same prompt — used for best-of-N, diverse output, or self-consistency. Since every sample starts from an identical prompt, their KV cache for the prompt tokens can be physically shared.',
+    async run() {}
+  },
+  {
+    desc: 'Prefill: the prompt ("The quick fox leaps") is processed and its key-value pairs are written into physical block P0. This single block will be reused by all N samples.',
+    async run() { await fillBlock(0,'shared-blk','prompt',80); }
+  },
+  {
+    desc: 'Three output sequences are forked from the shared prompt. Each sample card appears and inherits the prompt tokens (shown in teal). Block P0 now carries reference count = 3 — one for each sample reading from it. No data is copied.',
+    async run() {
+      document.getElementById('shared-zone').classList.add('active');
+      for (const s of SAMPLES) {
+        document.getElementById(`card-${s.id}`).classList.add('show');
+        PROMPT.forEach(t => addToken(s.id, t, true));
+        await sleep(130);
+      }
+      setRefBadge(3);
+    }
+  },
+  {
+    desc: 'Sample 1 generates its first decode token ("over"). A new private block P1 is allocated exclusively for it. The shared block P0 is never modified — no copy-on-write is needed because samples only write decode tokens to new blocks.',
+    async run() { addToken('s1',SAMPLES[0].tokens[0]); await partialFill(1,'s1','S1·LB0',1); }
+  },
+  {
+    desc: 'Samples 2 and 3 each generate their first token and receive their own private blocks (P2, P3). All three samples continue referencing the shared P0 for every attention computation over the prompt.',
+    async run() {
+      addToken('s2',SAMPLES[1].tokens[0]); await partialFill(2,'s2','S2·LB0',1);
+      await sleep(100);
+      addToken('s3',SAMPLES[2].tokens[0]); await partialFill(3,'s3','S3·LB0',1);
+    }
+  },
+  {
+    desc: 'All three samples continue generating independently, filling their private blocks with decode KV entries. Block P0 remains shared and read-only throughout — the ref count stays at 3.',
+    async run() {
+      for (let t=1;t<4;t++) {
+        for (let i=0;i<3;i++) {
+          const sl = document.getElementById(`pvs${i+1}_${t}`);
+          sl.classList.add('filled','pop');
+          sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+          addToken(SAMPLES[i].id, SAMPLES[i].tokens[t]);
+        }
+        await sleep(220);
+      }
+    }
+  },
+  {
+    desc: 'Sample 1 finishes generation and releases its reference to P0. The ref count drops from 3 → 2. P1 is freed. Samples 2 and 3 continue reading P0 with ref count 2.',
+    async run() {
+      clearBlock(1);
+      document.getElementById(`trow-s1`).querySelectorAll('.tok:not(.prompt)').forEach(t=>t.classList.add('done'));
+      setRefBadge(2);
+      await sleep(300);
+    }
+  },
+  {
+    desc: 'Memory summary: without sharing, 3 samples × 1 prompt block = 3 copies of prompt KV. With PagedAttention: 1 shared block + 3 private decode blocks = 4 total. Savings are 67% here — but for a 1,000-token prompt with N=10 samples the prompt KV alone is 10× smaller.',
+    async run() {
+      const sb = document.getElementById('savings-box');
+      sb.textContent = 'Without sharing: 3 samples × 1 prompt block = 3 blocks for prompt alone. With PagedAttention: 1 shared block + 3 private decode blocks = 4 total. Prompt KV reduced 67%. Scales with both prompt length and N.';
+      sb.classList.add('show');
+    }
+  }
+];
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+let cur=0, busy=false, playActive=false;
+
+async function goTo(n) {
+  if (busy||n<0||n>=STEPS.length) return;
+  busy=true; setUI(false);
+  if (n<=cur) { resetAll(); applyInstant(n); }
+  else { if (n-cur>1) { resetAll(); applyInstant(n-1); } await STEPS[n].run(); }
+  cur=n; busy=false; updateUI();
+}
+async function playAll() {
+  if (busy) return;
+  playActive=true;
+  document.getElementById('btn-play').textContent='■ Stop';
+  document.getElementById('btn-play').style.background='#e53935';
+  document.getElementById('btn-play').onclick=stopPlay;
+  while (cur<STEPS.length-1&&playActive) { await goTo(cur+1); await sleep(900); }
+  endPlay();
+}
+function stopPlay(){playActive=false;endPlay();}
+function endPlay(){
+  playActive=false;
+  const btn=document.getElementById('btn-play');
+  btn.textContent='▶ Play All';btn.style.background='#0891b2';btn.onclick=playAll;
+  updateUI();
+}
+function setUI(en){['btn-prev','btn-next','btn-play'].forEach(id=>document.getElementById(id).disabled=!en);}
+function updateUI(){
+  document.getElementById('step-pill').textContent=`Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent=STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled=cur===0;
+  document.getElementById('btn-next').disabled=cur===STEPS.length-1;
+  document.getElementById('btn-play').disabled=cur===STEPS.length-1;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+}
+STEPS.forEach((_,i)=>{
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.addEventListener('click',()=>{stopPlay();goTo(i);});
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{stopPlay();goTo(cur-1);});
+document.getElementById('btn-next').addEventListener('click',()=>{stopPlay();goTo(cur+1);});
+document.getElementById('btn-play').addEventListener('click',playAll);
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();goTo(0);});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if(e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>

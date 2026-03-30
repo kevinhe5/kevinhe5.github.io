@@ -5,43 +5,23 @@
 <title>KV Cache Preemption — vLLM Memory Pressure</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 12px}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
 
-#topbar{display:flex;align-items:center;justify-content:space-between;width:960px;max-width:100%;margin-bottom:14px}
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 32px);max-width:100%;margin-bottom:14px}
 #topbar-left{display:flex;align-items:center;gap:14px}
 h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 #step-pill{background:#4f5ff8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
 .home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
 
-#stage{
-  position:relative;
-  width:960px;max-width:100%;height:450px;
-  background:#fff;border-radius:16px;
-  box-shadow:0 4px 32px #1a1d3e1a;
-  display:flex;overflow:hidden;
-}
+#stage{position:relative;width:calc(100vw - 32px);max-width:100%;height:calc(100vh - 230px);background:#fff;border-radius:16px;box-shadow:0 4px 32px #1a1d3e1a;display:flex;overflow:hidden}
 
-/* Left panel — request queue */
-#left-panel{
-  width:280px;flex-shrink:0;
-  padding:15px;
-  display:flex;flex-direction:column;gap:6px;
-  border-right:1px solid #e8eaf6;
-  overflow:hidden;
-}
+/* Left panel */
+#left-panel{width:280px;flex-shrink:0;padding:15px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #e8eaf6;overflow:hidden}
 .panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
 
-/* Request cards (queue) */
-.req-card{
-  border-radius:8px;border:1.5px solid transparent;
-  padding:8px 11px;
-  opacity:0;transform:translateX(-12px);
-  transition:opacity 320ms ease, transform 320ms ease, border-color 300ms ease, background 300ms ease;
-  flex-shrink:0;
-}
+.req-card{border-radius:8px;border:1.5px solid transparent;padding:8px 11px;opacity:0;transform:translateX(-12px);transition:opacity 320ms ease,transform 320ms ease,border-color 300ms ease,background 300ms ease;flex-shrink:0}
 .req-card.show{opacity:1;transform:translateX(0)}
-.req-card.preempted{border-color:#f57c00!important;background:#fff8f0!important;
-  animation:cardShake 400ms ease-out}
+.req-card.preempted{border-color:#f57c00!important;background:#fff8f0!important;animation:cardShake 400ms ease-out}
 @keyframes cardShake{0%{transform:translateX(0)}20%{transform:translateX(-5px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
 .req-card.swapped{border-color:#bbb!important;background:#f8f8f8!important;opacity:.6}
 .req-card.resumed{animation:cardBounce 400ms ease-out}
@@ -53,62 +33,46 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 .status-waiting{background:#fff3e0;color:#e65100}
 .status-swapped{background:#f3f4f6;color:#888}
 .status-resumed{background:#dbeeff;color:#1565c0}
+.status-complete{background:#dcfce7;color:#16a34a}
 
 /* Right panel */
 #right-panel{flex:1;padding:15px;display:flex;flex-direction:column;gap:8px}
 
-/* Memory pressure bar */
+/* Pressure bar */
 #pressure-wrap{flex-shrink:0}
 #pressure-track{height:20px;background:#f0f2fa;border-radius:8px;overflow:hidden;border:1.5px solid #e0e4f0;position:relative}
-#pressure-fill{height:100%;width:0%;border-radius:7px;
-  transition:width 700ms cubic-bezier(.4,0,.2,1), background 500ms ease}
-#pressure-pct{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  font-size:10px;font-weight:700;color:#fff;white-space:nowrap;pointer-events:none}
+#pressure-fill{height:100%;width:0%;border-radius:7px;transition:width 700ms cubic-bezier(.4,0,.2,1),background 500ms ease}
+#pressure-pct{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:700;color:#fff;white-space:nowrap;pointer-events:none}
 #pressure-lbl{font-size:9px;color:#bbb;margin-top:3px}
 
 /* CPU memory panel */
-#cpu-panel{
-  border-radius:8px;border:1.5px dashed #d4d8f0;background:#fafbff;
-  padding:8px 10px;flex-shrink:0;
-}
+#cpu-panel{border-radius:8px;border:1.5px dashed #d4d8f0;background:#fafbff;padding:8px 10px;flex-shrink:0}
 #cpu-blocks{display:flex;gap:5px;flex-wrap:wrap;min-height:28px;margin-top:4px}
-.cpu-blk{
-  padding:3px 8px;border-radius:5px;
-  font-size:9px;font-weight:700;
-  border:1.5px solid;
-  opacity:0;
-  transition:opacity 300ms ease;
-}
+.cpu-blk{padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;border:1.5px solid;opacity:0;transition:opacity 300ms ease}
 .cpu-blk.show{opacity:1}
 
-/* GPU KV grid */
-#phys-grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:6px;flex:1;
-}
-.pb{
-  border-radius:7px;border:1.5px solid #d4d8f0;background:#f5f6fc;
-  padding:5px 6px;display:flex;flex-direction:column;gap:3px;
-  transition:background 350ms ease, border-color 350ms ease, box-shadow 350ms ease, opacity 350ms ease;
-}
+/* GPU KV grid — 12 blocks in 4×3 */
+#phys-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;flex:1}
+.pb{border-radius:7px;border:1.5px solid #d4d8f0;background:#f5f6fc;padding:5px 6px;display:flex;flex-direction:column;gap:3px;transition:background 350ms ease,border-color 350ms ease,box-shadow 350ms ease,opacity 350ms ease}
 .pb.pulse{animation:blkPulse 500ms ease-out}
 @keyframes blkPulse{0%{transform:scale(1)}45%{transform:scale(1.06)}100%{transform:scale(1)}}
-.pb.danger{box-shadow:0 0 0 3px #ef535066, 0 0 12px #ef535033;border-color:#ef5350}
+.pb.danger{box-shadow:0 0 0 3px #ef535066,0 0 12px #ef535033;border-color:#ef5350}
 .pb.evicting{animation:evictPulse 600ms ease-out}
 @keyframes evictPulse{0%{opacity:1}50%{opacity:.3;background:#fff3e0}100%{opacity:1}}
 
-/* per-owner colors */
 .pb.r1{background:#dbeeff;border-color:#1e88e5}
 .pb.r2{background:#e8f5e9;border-color:#43a047}
 .pb.r3{background:#ede9fe;border-color:#7c3aed}
 .pb.r4{background:#fff3e0;border-color:#f57c00}
+.pb.r5{background:#fce4ec;border-color:#e53935}
 
 .pb-head{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .pb-id{font-size:8px;font-weight:700;color:#bbb}
-.pb.r1 .pb-id{color:#1e88e5}.pb.r2 .pb-id{color:#43a047}.pb.r3 .pb-id{color:#7c3aed}.pb.r4 .pb-id{color:#f57c00}
-.pb-owner{font-size:7px;font-weight:600;color:#ccc}
-.pb.r1 .pb-owner{color:#1565c0}.pb.r2 .pb-owner{color:#1b5e20}.pb.r3 .pb-owner{color:#4c1d95}.pb.r4 .pb-owner{color:#e65100}
+.pb.r1 .pb-id{color:#1e88e5}.pb.r2 .pb-id{color:#43a047}.pb.r3 .pb-id{color:#7c3aed}
+.pb.r4 .pb-id{color:#f57c00}.pb.r5 .pb-id{color:#e53935}
+.pb-owner{font-size:6.5px;font-weight:600;color:#ccc}
+.pb.r1 .pb-owner{color:#1565c0}.pb.r2 .pb-owner{color:#1b5e20}.pb.r3 .pb-owner{color:#4c1d95}
+.pb.r4 .pb-owner{color:#e65100}.pb.r5 .pb-owner{color:#b71c1c}
 
 .kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;flex:1}
 .kv-slot{border-radius:3px;background:#e4e8f4;min-height:11px;transition:background 200ms ease}
@@ -116,24 +80,14 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 .pb.r2 .kv-slot.filled{background:#43a047}
 .pb.r3 .kv-slot.filled{background:#7c3aed}
 .pb.r4 .kv-slot.filled{background:#f57c00}
+.pb.r5 .kv-slot.filled{background:#e53935}
 .kv-slot.pop{animation:slotPop 280ms cubic-bezier(.34,1.56,.64,1)}
 @keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
 
-/* Floater chip */
-.floater{
-  position:absolute;z-index:200;border-radius:6px;
-  display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:700;pointer-events:none;
-  box-shadow:0 4px 16px #0002;
-  transition:left 700ms cubic-bezier(.25,.8,.25,1),top 700ms cubic-bezier(.25,.8,.25,1),
-    width 700ms cubic-bezier(.25,.8,.25,1),height 700ms cubic-bezier(.25,.8,.25,1),
-    opacity 250ms ease,border-radius 700ms ease;
-}
+/* Floater */
+.floater{position:absolute;z-index:200;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;pointer-events:none;box-shadow:0 4px 16px #0002;transition:left 700ms cubic-bezier(.25,.8,.25,1),top 700ms cubic-bezier(.25,.8,.25,1),width 700ms cubic-bezier(.25,.8,.25,1),height 700ms cubic-bezier(.25,.8,.25,1),opacity 250ms ease,border-radius 700ms ease}
 
-/* Desc + controls */
-#desc-box{width:960px;max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
-  border-radius:10px;border-left:4px solid #e65100;box-shadow:0 2px 10px #1a1d3e0d;
-  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#desc-box{width:calc(100vw - 32px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;border-radius:10px;border-left:4px solid #e65100;box-shadow:0 2px 10px #1a1d3e0d;font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
 #controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
 .ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
 #btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
@@ -145,6 +99,8 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 #btn-play{background:#43a047;color:#fff}
 #btn-play:hover:not(:disabled){background:#56b25a}
 #btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
 #dots{display:flex;gap:6px;align-items:center}
 .dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
 .dot.active{background:#4f5ff8;transform:scale(1.3)}
@@ -157,17 +113,14 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <a class="home-btn" href="index.html">← Home</a>
     <h1>KV Cache Preemption</h1>
   </div>
-  <span id="step-pill">Step 1 / 8</span>
+  <span id="step-pill">Step 1 / 11</span>
 </div>
 
 <div id="stage">
-  <!-- Left: request queue -->
   <div id="left-panel">
     <div class="panel-label">Requests</div>
     <!-- cards injected by JS -->
   </div>
-
-  <!-- Right: memory -->
   <div id="right-panel">
     <div id="pressure-wrap">
       <div class="panel-label">GPU KV Cache Pressure <span id="pressure-lbl" style="font-size:9px;color:#bbb;text-transform:none;letter-spacing:0;font-weight:400"></span></div>
@@ -176,14 +129,12 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
         <div id="pressure-pct"></div>
       </div>
     </div>
-
     <div id="cpu-panel">
       <div class="panel-label" style="color:#aaa">CPU Memory (swap space)</div>
-      <div id="cpu-blocks"><!-- evicted blocks land here --></div>
+      <div id="cpu-blocks"></div>
     </div>
-
     <div class="panel-label">GPU Physical Memory — 12 blocks</div>
-    <div id="phys-grid"><!-- injected --></div>
+    <div id="phys-grid"></div>
   </div>
 </div>
 
@@ -193,6 +144,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
   <div id="dots"></div>
   <button class="ctrl" id="btn-next">Next →</button>
   <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
 </div>
 
 <script>
@@ -205,46 +157,53 @@ const leftPanel = document.getElementById('left-panel');
 const gridEl    = document.getElementById('phys-grid');
 
 // ── Request definitions ────────────────────────────────────────────────────
-const REQS = [
-  { id:'r1', label:'Request 1', color:'#1e88e5', nBlocks:3 },
-  { id:'r2', label:'Request 2', color:'#43a047', nBlocks:3 },
-  { id:'r3', label:'Request 3', color:'#7c3aed', nBlocks:3 },
-  { id:'r4', label:'Request 4', color:'#f57c00', nBlocks:3, new: true },
+// R1/R2/R3 all start generating simultaneously, filling 12 blocks over 4 rounds.
+// R2 = victim; R4 = new request that arrives when memory is full.
+const ACTIVE_REQS = [
+  { id:'r1', label:'Request 1', color:'#1e88e5' },
+  { id:'r2', label:'Request 2', color:'#43a047' },  // victim
+  { id:'r3', label:'Request 3', color:'#7c3aed' },
 ];
+const VICTIM    = 'r2';
+const NEW_REQ   = { id:'r4', label:'Request 4 (new)', color:'#f57c00' };
 
-// Block assignments: R1→P0,P1,P2; R2→P3,P4,P5; R3→P6,P7,P8; (P9,P10,P11 free)
+// Scattered block assignments (not contiguous per request — realistic)
+// R1: P0, P5, P10, P3
+// R2: P4, P9, P2, P7  ← victim, 4 blocks will be evicted
+// R3: P8, P1, P6, P11
 const BLOCK_MAP = {
-  r1: [0,1,2], r2: [3,4,5], r3: [6,7,8]
+  r1: [0,  5, 10, 3],
+  r2: [4,  9,  2, 7],
+  r3: [8,  1,  6, 11],
 };
-const VICTIM = 'r2'; // will be preempted
-const VICTIM_BLOCKS = BLOCK_MAP[VICTIM];
-const NEW_REQ_ID = 'r4';
-const NEW_BLOCKS = [3,4,5]; // reuse after eviction
+const VICTIM_BLOCKS  = BLOCK_MAP[VICTIM];         // [4,9,2,7]
+const RESTORE_BLOCKS = BLOCK_MAP.r1;              // P0,P5,P10,P3 freed when R1 completes
+
+// R4 gets the first freed victim block for its LB0
+const R4_BLOCK = VICTIM_BLOCKS[0]; // P4
 
 // ── Build request cards ────────────────────────────────────────────────────
-REQS.forEach(req => {
+[...ACTIVE_REQS, NEW_REQ].forEach(req => {
   const card = document.createElement('div');
   card.className = 'req-card';
   card.id = `card-${req.id}`;
   card.style.borderColor = req.color;
-  card.style.background = req.color + '12';
+  card.style.background  = req.color + '12';
   card.innerHTML = `
-    <div class="req-title" style="color:${req.color}">${req.label}${req.new?' <span style="font-size:8px;color:#aaa">(new, high priority)</span>':''}</div>
+    <div class="req-title" style="color:${req.color}">${req.label}</div>
     <span class="req-status status-waiting" id="status-${req.id}">Waiting</span>`;
   leftPanel.appendChild(card);
 });
 
-function setStatus(reqId, cls, text) {
-  const el = document.getElementById(`status-${reqId}`);
-  el.className = `req-status ${cls}`;
-  el.textContent = text;
+function setStatus(id, cls, text) {
+  const el = document.getElementById(`status-${id}`);
+  el.className = `req-status ${cls}`; el.textContent = text;
 }
 
-// ── Build physical grid (12 blocks) ───────────────────────────────────────
+// ── Build 12 physical blocks ───────────────────────────────────────────────
 for (let i = 0; i < 12; i++) {
   const b = document.createElement('div');
-  b.className = 'pb';
-  b.id = `pb${i}`;
+  b.className = 'pb'; b.id = `pb${i}`;
   b.innerHTML = `
     <div class="pb-head">
       <span class="pb-id">P${i}</span>
@@ -257,283 +216,275 @@ for (let i = 0; i < 12; i++) {
 // ── Pressure bar ───────────────────────────────────────────────────────────
 function setPressure(pct, note='') {
   const fill = document.getElementById('pressure-fill');
-  const pctEl = document.getElementById('pressure-pct');
-  const lbl = document.getElementById('pressure-lbl');
-  const color = pct < 60 ? '#43a047' : pct < 85 ? '#f57c00' : '#e53935';
+  const color = pct < 60 ? '#43a047' : pct < 90 ? '#f57c00' : '#e53935';
   fill.style.width = pct + '%';
   fill.style.background = color;
-  pctEl.textContent = pct + '%';
-  lbl.textContent = note;
+  document.getElementById('pressure-pct').textContent = pct + '%';
+  document.getElementById('pressure-lbl').textContent = note;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Block helpers ─────────────────────────────────────────────────────────
 function setBlock(pbId, req, ownerLabel) {
   const b = document.getElementById(`pb${pbId}`);
   b.classList.add(req);
   document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
-  for (let s = 0; s < 4; s++) {
-    document.getElementById(`pvs${pbId}_${s}`).classList.add('filled');
-  }
+  for (let s = 0; s < 4; s++) document.getElementById(`pvs${pbId}_${s}`).classList.add('filled');
 }
 function clearBlock(pbId) {
   const b = document.getElementById(`pb${pbId}`);
-  b.className = 'pb';
-  b.style = '';
+  b.className = 'pb'; b.style = '';
   document.getElementById(`pbo${pbId}`).textContent = '';
-  for (let s = 0; s < 4; s++) {
-    document.getElementById(`pvs${pbId}_${s}`).className = 'kv-slot';
-  }
+  for (let s = 0; s < 4; s++) document.getElementById(`pvs${pbId}_${s}`).className = 'kv-slot';
 }
-
-async function fillBlock(pbId, req, ownerLabel, delayBetween=60) {
+async function fillBlock(pbId, req, ownerLabel, delay=55) {
   const b = document.getElementById(`pb${pbId}`);
-  b.classList.add(req,'pulse');
+  b.classList.add(req, 'pulse');
   document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
-  await sleep(150);
-  b.classList.remove('pulse');
+  await sleep(120); b.classList.remove('pulse');
   for (let s = 0; s < 4; s++) {
     const sl = document.getElementById(`pvs${pbId}_${s}`);
     sl.classList.add('filled','pop');
     sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
-    if (s < 3) await sleep(delayBetween);
+    if (s < 3) await sleep(delay);
   }
 }
 
-// Fly a block from GPU grid to CPU panel (eviction)
+// Allocate one LB for all active requests simultaneously
+async function allocRound(lbIdx, blocksByReq) {
+  // blocksByReq: [[req, pbId], ...]
+  await Promise.all(blocksByReq.map(([req, pbId], i) => {
+    const num = ACTIVE_REQS.findIndex(r=>r.id===req)+1;
+    return fillBlock(pbId, req, `R${num}·LB${lbIdx}`);
+  }));
+}
+
+// Evict block from GPU to CPU
 async function evictToCPU(pbId, req) {
-  const color = REQS.find(r => r.id === req).color;
+  const color = [...ACTIVE_REQS, NEW_REQ].find(r=>r.id===req).color;
   const fromEl = document.getElementById(`pb${pbId}`);
   const toEl   = document.getElementById('cpu-blocks');
-
-  const stRect   = stage.getBoundingClientRect();
+  const stRect  = stage.getBoundingClientRect();
   const fromRect = fromEl.getBoundingClientRect();
   const toRect   = toEl.getBoundingClientRect();
 
-  // Mark block as evicting visually
   fromEl.classList.add('evicting');
 
   const fl = document.createElement('div');
   fl.className = 'floater';
   fl.textContent = `P${pbId}`;
-  fl.style.cssText = `
-    left:${fromRect.left - stRect.left}px;
-    top:${fromRect.top  - stRect.top}px;
-    width:${fromRect.width}px;height:${fromRect.height}px;
-    background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  fl.style.cssText = `left:${fromRect.left-stRect.left}px;top:${fromRect.top-stRect.top}px;width:${fromRect.width}px;height:${fromRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
   stage.appendChild(fl);
 
-  await raf2();
-  fl.style.opacity = '1';
-  await raf2();
-
-  fl.style.left   = `${toRect.left + (Math.random() * 20) - stRect.left}px`;
-  fl.style.top    = `${toRect.top  - stRect.top + 4}px`;
-  fl.style.width  = '52px'; fl.style.height = '22px';
-  fl.style.borderRadius = '5px';
-
+  await raf2(); fl.style.opacity='1'; await raf2();
+  fl.style.left=`${toRect.left+(Math.random()*20)-stRect.left}px`;
+  fl.style.top=`${toRect.top-stRect.top+4}px`;
+  fl.style.width='52px'; fl.style.height='22px'; fl.style.borderRadius='5px';
   await sleep(720);
 
-  // Add chip to CPU panel
   const chip = document.createElement('div');
-  chip.className = 'cpu-blk show';
-  chip.id = `cpu-blk-${pbId}`;
-  chip.style.cssText = `border-color:${color};color:${color};background:${color}15`;
-  chip.textContent = `P${pbId}`;
+  chip.className='cpu-blk show'; chip.id=`cpu-blk-${pbId}`;
+  chip.style.cssText=`border-color:${color};color:${color};background:${color}15`;
+  chip.textContent=`P${pbId}`;
   document.getElementById('cpu-blocks').appendChild(chip);
   fl.remove();
-
-  // Clear the GPU block
   clearBlock(pbId);
 }
 
-// Fly block chip from CPU back to GPU
-async function restoreFromCPU(cpuChipId, pbId, req) {
-  const color = REQS.find(r => r.id === req).color;
+// Restore block from CPU back to GPU
+async function restoreFromCPU(cpuChipId, pbId, req, lbIdx) {
+  const color = [...ACTIVE_REQS, NEW_REQ].find(r=>r.id===req).color;
   const fromEl = document.getElementById(cpuChipId);
   const toEl   = document.getElementById(`pb${pbId}`);
-
-  const stRect   = stage.getBoundingClientRect();
+  const stRect  = stage.getBoundingClientRect();
   const fromRect = fromEl.getBoundingClientRect();
   const toRect   = toEl.getBoundingClientRect();
 
   const fl = document.createElement('div');
-  fl.className = 'floater';
-  fl.textContent = `P${pbId}`;
-  fl.style.cssText = `
-    left:${fromRect.left - stRect.left}px;
-    top:${fromRect.top  - stRect.top}px;
-    width:${fromRect.width}px;height:${fromRect.height}px;
-    background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  fl.className='floater'; fl.textContent=`P${pbId}`;
+  fl.style.cssText=`left:${fromRect.left-stRect.left}px;top:${fromRect.top-stRect.top}px;width:${fromRect.width}px;height:${fromRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
   stage.appendChild(fl);
-  fromEl.style.opacity = '0';
+  fromEl.style.opacity='0';
 
-  await raf2();
-  fl.style.opacity = '1';
-  await raf2();
-
-  fl.style.left = `${toRect.left - stRect.left}px`;
-  fl.style.top  = `${toRect.top  - stRect.top}px`;
-  fl.style.width = `${toRect.width}px`;
-  fl.style.height = `${toRect.height}px`;
-  fl.style.borderRadius = '8px';
-
+  await raf2(); fl.style.opacity='1'; await raf2();
+  fl.style.left=`${toRect.left-stRect.left}px`;
+  fl.style.top=`${toRect.top-stRect.top}px`;
+  fl.style.width=`${toRect.width}px`; fl.style.height=`${toRect.height}px`;
+  fl.style.borderRadius='8px';
   await sleep(720);
-  fl.remove();
-  fromEl.remove();
-  setBlock(pbId, req, `R2·LB${VICTIM_BLOCKS.indexOf(pbId)}`);
+  fl.remove(); fromEl.remove();
+  setBlock(pbId, req, `R2·LB${lbIdx}`);
 }
 
-// ── Reset + instant state ─────────────────────────────────────────────────
+// ── Reset ──────────────────────────────────────────────────────────────────
 function resetAll() {
   stage.querySelectorAll('.floater').forEach(f=>f.remove());
-  for (let i = 0; i < 12; i++) clearBlock(i);
-  document.querySelectorAll('.req-card').forEach(c => {
-    c.classList.remove('show','preempted','swapped','resumed');
+  for (let i=0;i<12;i++) clearBlock(i);
+  [...ACTIVE_REQS, NEW_REQ].forEach(r => {
+    const card = document.getElementById(`card-${r.id}`);
+    card.classList.remove('show','preempted','swapped','resumed');
+    setStatus(r.id,'status-waiting','Waiting');
   });
-  document.getElementById('cpu-blocks').innerHTML = '';
+  document.getElementById('cpu-blocks').innerHTML='';
   setPressure(0,'');
-  REQS.forEach(r => { const el=document.getElementById(`status-${r.id}`); if(el){el.className='req-status status-waiting';el.textContent='Waiting';} });
 }
 
+// ── Instant state ──────────────────────────────────────────────────────────
 function applyInstant(n) {
   if (n >= 1) {
-    // R1, R2, R3 running
-    ['r1','r2','r3'].forEach((id,i) => {
-      document.getElementById(`card-${id}`).classList.add('show');
-      setStatus(id,'status-running','Running');
-      BLOCK_MAP[id].forEach((pb,li) => setBlock(pb,id,`R${i+1}·LB${li}`));
+    ACTIVE_REQS.forEach((r,i) => {
+      document.getElementById(`card-${r.id}`).classList.add('show');
+      setStatus(r.id,'status-running','Running');
     });
-    setPressure(75,'9/12 blocks used');
   }
-  if (n >= 2) {
-    // R4 arrives
+  // LB rounds that are complete
+  const rounds = Math.min(n-1, 4);  // steps 1-4 each add one LB round
+  for (let lb=0; lb<rounds; lb++) {
+    ACTIVE_REQS.forEach((r,i) => setBlock(BLOCK_MAP[r.id][lb], r.id, `R${i+1}·LB${lb}`));
+  }
+  const blocksUsed = rounds * 3;
+  if (rounds > 0) setPressure(Math.round(blocksUsed/12*100), `${blocksUsed}/12 blocks used`);
+
+  if (n >= 5) {
+    setPressure(100,'12/12 blocks — FULL');
     document.getElementById(`card-r4`).classList.add('show');
     setStatus('r4','status-waiting','Waiting — no free blocks');
-    setPressure(100,'12/12 blocks full');
-  }
-  if (n >= 3) {
-    // R2 preempted — its blocks cleared, shown in CPU
-    document.getElementById(`card-r2`).classList.add('show','preempted','swapped');
-    setStatus('r2','status-swapped','Swapped to CPU');
-    VICTIM_BLOCKS.forEach(pb => {
-      const chip = document.createElement('div');
-      chip.className = 'cpu-blk show';
-      chip.id = `cpu-blk-${pb}`;
-      const color = '#43a047';
-      chip.style.cssText = `border-color:${color};color:${color};background:${color}15`;
-      chip.textContent = `P${pb}`;
-      document.getElementById('cpu-blocks').appendChild(chip);
-    });
-    setPressure(75,'9/12 after eviction');
-  }
-  if (n >= 4) {
-    // R4 allocated into freed blocks
-    document.getElementById(`card-r4`).classList.add('show');
-    setStatus('r4','status-running','Running');
-    NEW_BLOCKS.forEach((pb,li) => setBlock(pb,'r4',`R4·LB${li}`));
-    setPressure(75,'9/12 blocks used');
-  }
-  if (n >= 5) {
-    // R1 and R3 done, pressure drops
-    BLOCK_MAP.r1.forEach(pb => clearBlock(pb));
-    BLOCK_MAP.r3.forEach(pb => clearBlock(pb));
-    document.getElementById('card-r1').classList.add('show');
-    document.getElementById('card-r3').classList.add('show');
-    setStatus('r1','status-waiting','Complete');
-    setStatus('r3','status-waiting','Complete');
-    setPressure(25,'3/12 blocks used');
   }
   if (n >= 6) {
-    // R2 restored from CPU
-    VICTIM_BLOCKS.forEach(pb => setBlock(pb,'r2',`R2·LB${VICTIM_BLOCKS.indexOf(pb)}`));
-    document.getElementById('cpu-blocks').innerHTML = '';
+    // R2 preempted: blocks cleared from GPU, shown in CPU
+    document.getElementById(`card-r2`).classList.add('preempted','swapped');
+    setStatus('r2','status-swapped','Swapped to CPU — paused');
+    VICTIM_BLOCKS.forEach(pb => clearBlock(pb));
+    VICTIM_BLOCKS.forEach(pb => {
+      const chip=document.createElement('div');
+      chip.className='cpu-blk show'; chip.id=`cpu-blk-${pb}`;
+      const c='#43a047';
+      chip.style.cssText=`border-color:${c};color:${c};background:${c}15`;
+      chip.textContent=`P${pb}`;
+      document.getElementById('cpu-blocks').appendChild(chip);
+    });
+    setPressure(75,'9/12 — after eviction');
+  }
+  if (n >= 7) {
+    // R4 gets first freed block (LB0); R2 still in CPU
+    document.getElementById(`card-r4`).classList.add('show');
+    setStatus('r4','status-running','Running');
+    setBlock(R4_BLOCK, 'r4', 'R4·LB0');
+    setPressure(Math.round(10/12*100),'10/12 blocks used');
+  }
+  if (n >= 8) {
+    // R1 and R3 complete; their blocks cleared
+    BLOCK_MAP.r1.forEach(pb=>clearBlock(pb));
+    BLOCK_MAP.r3.forEach(pb=>clearBlock(pb));
+    setStatus('r1','status-complete','Complete ✓');
+    setStatus('r3','status-complete','Complete ✓');
+    setPressure(Math.round(2/12*100),'2/12 blocks — space for R2');
+  }
+  if (n >= 9) {
+    // R2 restored from CPU into R1's freed blocks
+    document.getElementById('cpu-blocks').innerHTML='';
     document.getElementById(`card-r2`).classList.remove('preempted','swapped');
-    setStatus('r2','status-resumed','Resumed (restored)');
-    setPressure(50,'6/12 blocks used');
+    document.getElementById(`card-r2`).classList.add('resumed');
+    setStatus('r2','status-resumed','Resumed — generation continues');
+    VICTIM_BLOCKS.forEach((_, i) => setBlock(BLOCK_MAP.r1[i],'r2',`R2·LB${i}`));
+    setPressure(Math.round(5/12*100),'5/12 blocks used');
   }
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────
 const STEPS = [
   {
-    desc: 'When the GPU KV cache fills up, vLLM must decide what to do with a waiting high-priority request. It uses preemption: evict one running request\'s KV blocks to CPU memory, freeing space, then restore them later.',
+    desc: 'Three requests begin autoregressive decoding simultaneously. Each generates tokens one at a time and acquires new KV cache blocks as needed. The system has 12 physical blocks. Watch how they fill as all three generate in parallel — just like a real vLLM batch.',
     async run() {}
   },
   {
-    desc: 'Three requests are running, each using 3 KV cache blocks (9 of 12 total). The batch is healthy — 3 blocks remain free.',
+    desc: 'Decode round 1 — all three requests need their first block (LB0). The scheduler allocates one block per request simultaneously: R1→P0, R2→P4, R3→P8. Three tokens per block, 3 blocks claimed, 9 free.',
     async run() {
-      for (const r of ['r1','r2','r3']) {
-        document.getElementById(`card-${r}`).classList.add('show');
-        setStatus(r,'status-running','Running');
-      }
-      for (const [r, blocks] of Object.entries(BLOCK_MAP)) {
-        for (let li = 0; li < blocks.length; li++) await fillBlock(blocks[li], r, `R${['r1','r2','r3'].indexOf(r)+1}·LB${li}`, 40);
-      }
+      ACTIVE_REQS.forEach(r => {
+        document.getElementById(`card-${r.id}`).classList.add('show');
+        setStatus(r.id,'status-running','Running');
+      });
+      await allocRound(0, ACTIVE_REQS.map((r,i)=>[r.id, BLOCK_MAP[r.id][0]]));
+      setPressure(25,'3/12 blocks used');
+    }
+  },
+  {
+    desc: 'Decode round 2 — each request\'s first block fills up, so they each acquire LB1 simultaneously: R1→P5, R2→P9, R3→P1. Six blocks claimed, 6 free. Memory pressure rising.',
+    async run() {
+      await allocRound(1, ACTIVE_REQS.map((r,i)=>[r.id, BLOCK_MAP[r.id][1]]));
+      setPressure(50,'6/12 blocks used');
+    }
+  },
+  {
+    desc: 'Decode round 3 — LB2 acquired by all three simultaneously: R1→P10, R2→P2, R3→P6. Nine blocks claimed, only 3 remain. The batch is at 75% capacity and still generating.',
+    async run() {
+      await allocRound(2, ACTIVE_REQS.map((r,i)=>[r.id, BLOCK_MAP[r.id][2]]));
       setPressure(75,'9/12 blocks used');
     }
   },
   {
-    desc: 'Request 4 (high priority) arrives. It needs 3 blocks but ALL 12 are occupied. The scheduler must free memory before it can run.',
+    desc: 'Decode round 4 — all three requests fill their third block and need LB3. Blocks allocated simultaneously: R1→P3, R2→P7, R3→P11. All 12 blocks now occupied — the KV cache is completely full.',
+    async run() {
+      await allocRound(3, ACTIVE_REQS.map((r,i)=>[r.id, BLOCK_MAP[r.id][3]]));
+      setPressure(100,'12/12 — FULL');
+    }
+  },
+  {
+    desc: 'Request 4 arrives and needs a block to start decoding. All 12 are occupied. The scheduler cannot proceed without freeing space — it must preempt one running request. R2 is selected as the victim (e.g. lowest score / longest remaining sequence).',
     async run() {
       document.getElementById('card-r4').classList.add('show');
       setStatus('r4','status-waiting','Waiting — no free blocks');
-      setPressure(100,'12/12 blocks full — FULL!');
-      // flash danger on all blocks briefly
       for (let i=0;i<12;i++) document.getElementById(`pb${i}`).classList.add('danger');
       await sleep(600);
       for (let i=0;i<12;i++) document.getElementById(`pb${i}`).classList.remove('danger');
     }
   },
   {
-    desc: 'The scheduler selects Request 2 as the preemption victim (e.g., lowest priority or furthest from completion). Its 3 KV blocks are swapped out to CPU memory and its GPU blocks are freed.',
+    desc: 'R2\'s four KV blocks (P4, P9, P2, P7) are swapped out to CPU memory one by one. Each block preserves its full KV vector content — R2\'s generation progress is not lost, just paused. After eviction, 4 GPU blocks are free.',
     async run() {
       document.getElementById('card-r2').classList.add('preempted');
       setStatus('r2','status-swapped','Being preempted…');
       await sleep(200);
-      for (const pb of VICTIM_BLOCKS) {
-        await evictToCPU(pb, VICTIM);
-        await sleep(100);
-      }
+      for (const pb of VICTIM_BLOCKS) { await evictToCPU(pb, VICTIM); await sleep(80); }
       document.getElementById('card-r2').classList.add('swapped');
       setStatus('r2','status-swapped','Swapped to CPU — paused');
-      setPressure(50,'6/12 blocks used after eviction');
+      setPressure(75,'9/12 — after eviction (but R4 still waiting)');
     }
   },
   {
-    desc: 'With 3 GPU blocks freed, Request 4 is immediately allocated and begins running. The preempted blocks in CPU memory are preserved intact — Request 2\'s progress is not lost.',
+    desc: 'R4 is immediately allocated one block (P4 → LB0) and begins decoding. Notice that at this point we don\'t know how many total blocks R4 will need — it acquires them one at a time as tokens generate, just like R1, R2, R3 did.',
     async run() {
       setStatus('r4','status-running','Running');
       document.getElementById('card-r4').classList.add('resumed');
-      for (let li = 0; li < NEW_BLOCKS.length; li++) await fillBlock(NEW_BLOCKS[li], 'r4', `R4·LB${li}`, 55);
-      setPressure(75,'9/12 blocks used');
+      await fillBlock(R4_BLOCK, 'r4', 'R4·LB0', 55);
+      setPressure(Math.round(10/12*100),'10/12 blocks used');
     }
   },
   {
-    desc: 'Requests 1 and 3 complete and release their blocks. GPU memory pressure drops significantly. Now there\'s enough room to restore Request 2 from CPU.',
+    desc: 'R1 and R3 finish their sequences and release all their blocks. R1 frees P0, P5, P10, P3. R3 frees P8, P1, P6, P11. Eight blocks freed. GPU memory pressure drops sharply — now there\'s room to restore R2.',
     async run() {
-      setStatus('r1','status-waiting','Complete ✓');
-      setStatus('r3','status-waiting','Complete ✓');
-      BLOCK_MAP.r1.forEach(pb => { clearBlock(pb); });
-      BLOCK_MAP.r3.forEach(pb => { clearBlock(pb); });
+      setStatus('r1','status-complete','Complete ✓');
+      setStatus('r3','status-complete','Complete ✓');
+      BLOCK_MAP.r1.forEach(pb => clearBlock(pb));
+      BLOCK_MAP.r3.forEach(pb => clearBlock(pb));
       await sleep(200);
-      setPressure(25,'3/12 blocks used — space available');
+      setPressure(Math.round(2/12*100),'2/12 blocks — space available');
     }
   },
   {
-    desc: 'Request 2\'s blocks are swapped back from CPU to GPU. Generation resumes exactly where it left off — no tokens need to be recomputed. The KV cache in CPU memory was intact.',
+    desc: 'R2\'s blocks are swapped back from CPU into R1\'s freed slots (P0, P5, P10, P3). The KV vectors stored in CPU memory are intact — generation resumes exactly where it left off. No tokens are recomputed.',
     async run() {
-      for (const pb of VICTIM_BLOCKS) {
-        await restoreFromCPU(`cpu-blk-${pb}`, pb, VICTIM);
-        await sleep(100);
+      for (let i=0; i<VICTIM_BLOCKS.length; i++) {
+        await restoreFromCPU(`cpu-blk-${VICTIM_BLOCKS[i]}`, BLOCK_MAP.r1[i], VICTIM, i);
+        await sleep(80);
       }
       document.getElementById('card-r2').classList.remove('preempted','swapped');
       document.getElementById('card-r2').classList.add('resumed');
-      setStatus('r2','status-resumed','Resumed — continuing generation');
-      setPressure(50,'6/12 blocks in use');
+      setStatus('r2','status-resumed','Resumed — generation continues');
+      setPressure(Math.round(5/12*100),'5/12 blocks in use');
     }
   },
   {
-    desc: 'Summary: vLLM handles memory pressure without dropping requests or corrupting other request\'s caches. The preempted request pays a latency penalty (wait time + swap overhead), but no work is lost. Alternative: recompute the KV cache from scratch instead of swapping — trades CPU memory bandwidth for GPU recompute.',
+    desc: 'Summary: vLLM never pre-allocates all blocks for a request — each block is acquired one round at a time as tokens generate. When memory fills, the scheduler evicts the lowest-priority request to CPU swap, serves the new request, and restores the evicted request when space opens. No work is lost; the evicted request pays a latency penalty (swap + wait) but not a correctness penalty.',
     async run() {}
   },
 ];
@@ -546,7 +497,7 @@ async function goTo(n) {
   busy = true; setUI(false);
   if (n <= cur) { resetAll(); applyInstant(n); }
   else {
-    if (n - cur > 1) { resetAll(); applyInstant(n - 1); }
+    if (n - cur > 1) { resetAll(); applyInstant(n-1); }
     await STEPS[n].run();
   }
   cur = n; busy = false; updateUI();
@@ -558,7 +509,7 @@ async function playAll() {
   document.getElementById('btn-play').textContent = '■ Stop';
   document.getElementById('btn-play').style.background = '#e53935';
   document.getElementById('btn-play').onclick = stopPlay;
-  while (cur < STEPS.length - 1 && playActive) { await goTo(cur + 1); await sleep(900); }
+  while (cur < STEPS.length-1 && playActive) { await goTo(cur+1); await sleep(900); }
   endPlay();
 }
 function stopPlay() { playActive = false; endPlay(); }
@@ -568,26 +519,28 @@ function endPlay() {
   btn.textContent = '▶ Play All'; btn.style.background = '#43a047'; btn.onclick = playAll;
   updateUI();
 }
-function setUI(en) { ['btn-prev','btn-next','btn-play'].forEach(id => document.getElementById(id).disabled = !en); }
+function setUI(en) { ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id=>document.getElementById(id).disabled=!en); }
 function updateUI() {
   document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
-  document.getElementById('desc-box').textContent = STEPS[cur].desc;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
   document.getElementById('btn-prev').disabled = cur === 0;
-  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
-  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
-  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+  document.getElementById('btn-next').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
 }
 
 STEPS.forEach((_,i) => {
   const d = document.createElement('div');
-  d.className = 'dot' + (i===0?' active':'');
-  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  d.className = 'dot'+(i===0?' active':'');
+  d.addEventListener('click', ()=>{stopPlay();goTo(i);});
   document.getElementById('dots').appendChild(d);
 });
-document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); goTo(cur-1); });
-document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); goTo(cur+1); });
-document.getElementById('btn-play').addEventListener('click', playAll);
-document.addEventListener('keydown', e => {
+document.getElementById('btn-prev').addEventListener('click',  ()=>{stopPlay();goTo(cur-1);});
+document.getElementById('btn-next').addEventListener('click',  ()=>{stopPlay();goTo(cur+1);});
+document.getElementById('btn-play').addEventListener('click',  playAll);
+document.getElementById('btn-reset').addEventListener('click', ()=>{stopPlay();goTo(0);});
+document.addEventListener('keydown', e=>{
   if (e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
   if (e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
 });

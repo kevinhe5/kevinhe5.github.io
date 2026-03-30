@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Memory Fragmentation — Without PagedAttention</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 32px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#dc2626;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{position:relative;width:calc(100vw - 32px);max-width:100%;height:calc(100vh - 230px);background:#fff;border-radius:16px;box-shadow:0 4px 32px #1a1d3e1a;display:flex;overflow:hidden}
+
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+.divider{width:1px;background:#e8eaf6;flex-shrink:0}
+
+/* ── Left panel ──────────────────────────────────────────────────────────── */
+#left-panel{width:210px;flex-shrink:0;padding:13px 12px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+
+.req-card{border-radius:8px;border:1.5px solid transparent;padding:8px 10px;opacity:0;transform:translateY(8px);transition:opacity 320ms ease,transform 320ms ease;flex-shrink:0}
+.req-card.show{opacity:1;transform:translateY(0)}
+.req-card.r1{border-color:#1e88e5;background:#f4f9ff}
+.req-card.r2{border-color:#f57c00;background:#fffaf4}
+.req-card.r3{border-color:#43a047;background:#f4fdf5}
+.req-card.r4{border-color:#8e24aa;background:#fdf4ff}
+.req-card.r5{border-color:#dc2626;background:#fef2f2}
+
+.req-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.req-name{font-size:10px;font-weight:800}
+.r1 .req-name{color:#1e88e5}.r2 .req-name{color:#f57c00}.r3 .req-name{color:#43a047}.r4 .req-name{color:#8e24aa}.r5 .req-name{color:#dc2626}
+
+.req-badge{font-size:8px;font-weight:800;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px}
+.badge-running{background:#e8f5e9;color:#2e7d32}
+.badge-waiting{background:#f0f2fa;color:#888}
+.badge-complete{background:#dcfce7;color:#16a34a}
+.badge-blocked{background:#fee2e2;color:#dc2626}
+
+.req-info{font-size:8px;color:#888;line-height:1.5}
+.req-info b{color:#444;font-weight:700}
+
+/* ── Right panel ─────────────────────────────────────────────────────────── */
+#right-panel{flex:1;padding:13px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+
+/* Address space header */
+#addr-hdr{display:flex;align-items:flex-end;padding-left:72px;gap:0;flex-shrink:0}
+.addr-tick{font-size:8px;color:#bbb;font-weight:600;text-align:left}
+
+/* Memory rows */
+#mem-grid{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.mem-row{display:flex;align-items:center;gap:6px}
+.row-meta{width:64px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.row-badge{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:800;opacity:0;transition:opacity 300ms ease;text-align:center}
+.row-badge.show{opacity:1}
+.row-badge.r1{background:#dbeeff;color:#1e88e5}
+.row-badge.r2{background:#fff3e0;color:#f57c00}
+.row-badge.r3{background:#e8f5e9;color:#43a047}
+.row-badge.r4{background:#f3e8ff;color:#8e24aa}
+.row-addr{font-size:7px;color:#bbb;font-weight:600}
+.cells-wrap{display:flex;gap:2px;flex:1;position:relative}
+
+/* Memory cells */
+.mc{
+  flex:1;height:46px;
+  border-radius:4px;border:1.5px solid #d4d8f0;background:#f0f2fa;
+  display:flex;align-items:center;justify-content:center;
+  font-size:8.5px;font-weight:700;color:#ccc;
+  transition:all 280ms ease;
+  position:relative;overflow:hidden;
+}
+/* Used */
+.mc.used.r1{background:#dbeeff;border-color:#1e88e5;color:#1565c0}
+.mc.used.r2{background:#fff3e0;border-color:#f57c00;color:#e65100}
+.mc.used.r3{background:#e8f5e9;border-color:#43a047;color:#1b5e20}
+.mc.used.r4{background:#f3e8ff;border-color:#8e24aa;color:#4a148c}
+/* Reserved (allocated but not yet written — just for step 1) */
+.mc.reserved{border-style:dashed}
+.mc.reserved.r1{background:#dbeeff55;border-color:#1e88e5;color:#1e88e588}
+.mc.reserved.r2{background:#fff3e055;border-color:#f57c00;color:#f57c0088}
+.mc.reserved.r3{background:#e8f5e955;border-color:#43a047;color:#43a04788}
+.mc.reserved.r4{background:#f3e8ff55;border-color:#8e24aa;color:#8e24aa88}
+/* Wasted — diagonal stripe shows the space is locked but empty */
+.mc.wasted.r1{background:repeating-linear-gradient(-45deg,#dbeeff 0,#dbeeff 3px,#a8c7f0 3px,#a8c7f0 6px);border-color:#1e88e5;color:transparent}
+.mc.wasted.r2{background:repeating-linear-gradient(-45deg,#fff3e0 0,#fff3e0 3px,#ffcc80 3px,#ffcc80 6px);border-color:#f57c00;color:transparent}
+.mc.wasted.r3{background:repeating-linear-gradient(-45deg,#e8f5e9 0,#e8f5e9 3px,#a5d6a7 3px,#a5d6a7 6px);border-color:#43a047;color:transparent}
+.mc.wasted.r4{background:repeating-linear-gradient(-45deg,#f3e8ff 0,#f3e8ff 3px,#ce93d8 3px,#ce93d8 6px);border-color:#8e24aa;color:transparent}
+/* Freed (hole after request completes) */
+.mc.hole{background:#fef9c3;border-color:#ca8a04;border-style:dashed;color:#a16207}
+/* Hole being checked by R5 — red highlight */
+.mc.checking{background:#fee2e2;border-color:#dc2626;border-style:solid;color:#dc2626;animation:checkPulse 500ms ease}
+@keyframes checkPulse{0%,100%{border-color:#dc2626}50%{box-shadow:0 0 0 3px #dc262640}}
+/* Slot pop animation */
+.mc.pop{animation:mcPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes mcPop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+
+/* Waste annotation that appears on the right of a row */
+.waste-note{
+  font-size:8px;font-weight:700;
+  padding:2px 6px;border-radius:4px;
+  opacity:0;transition:opacity 400ms ease;
+  white-space:nowrap;flex-shrink:0;
+}
+.waste-note.show{opacity:1}
+.waste-note.r1{color:#dc2626;background:#fee2e2}
+.waste-note.r2{color:#dc2626;background:#fee2e2}
+.waste-note.r3{color:#dc2626;background:#fee2e2}
+.waste-note.r4{color:#dc2626;background:#fee2e2}
+
+/* Row note (appears below a row for external frag feedback) */
+.row-note{
+  font-size:9px;font-weight:700;padding:3px 9px;border-radius:5px;
+  opacity:0;transition:opacity 300ms ease;
+  position:absolute;right:0;top:-22px;
+  pointer-events:none;white-space:nowrap;
+}
+.row-note.show{opacity:1}
+.row-note.too-small{background:#fef2f2;color:#dc2626;border:1px solid #fca5a5}
+.row-note.ok{background:#f0fdf4;color:#16a34a;border:1px solid #86efac}
+
+/* ── Stats bar ───────────────────────────────────────────────────────────── */
+#stats-wrap{background:#f8f9ff;border-radius:8px;border:1px solid #e0e4f0;padding:10px 14px;flex-shrink:0}
+#stats-track{height:16px;border-radius:6px;background:#e0e4f0;display:flex;overflow:hidden;margin-bottom:7px}
+.seg{height:100%;transition:width 600ms ease;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:800;color:#fff;overflow:hidden;white-space:nowrap}
+.seg-used{background:#43a047}
+.seg-wasted{background:repeating-linear-gradient(-45deg,#ef4444 0,#ef4444 4px,#fca5a5 4px,#fca5a5 8px)}
+.seg-free{background:#c8cce8;color:#555}
+#stats-nums{display:flex;gap:20px;font-size:9.5px;font-weight:700}
+.sn-used{color:#16a34a}.sn-wasted{color:#dc2626}.sn-free{color:#888}
+
+/* Frag-type banner */
+#frag-banner{
+  background:#fef2f2;border:1.5px solid #dc2626;border-radius:7px;
+  padding:6px 12px;font-size:11px;font-weight:700;color:#dc2626;
+  opacity:0;transition:opacity 400ms ease;flex-shrink:0;
+  display:flex;align-items:center;gap:6px;
+}
+#frag-banner.show{opacity:1}
+
+#desc-box{width:calc(100vw - 32px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;border-radius:10px;border-left:4px solid #dc2626;box-shadow:0 2px 10px #1a1d3e0d;font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#4f5ff8;color:#fff}
+#btn-next:hover:not(:disabled){background:#6472fa}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#43a047;color:#fff}
+#btn-play:hover:not(:disabled){background:#56b25a}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#dc2626;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Memory Fragmentation</h1>
+  </div>
+  <span id="step-pill">Step 1 / 9</span>
+</div>
+
+<div id="stage">
+  <div id="left-panel">
+    <div class="panel-label">Requests</div>
+    <!-- injected by JS -->
+  </div>
+  <div class="divider"></div>
+  <div id="right-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div class="panel-label" style="margin:0">Contiguous Memory — 32 slots, allocated per predicted length</div>
+      <div id="frag-banner"></div>
+    </div>
+    <div id="mem-grid"><!-- rows injected by JS --></div>
+    <div id="stats-wrap">
+      <div id="stats-track">
+        <div class="seg seg-used" id="seg-used" style="width:0%"></div>
+        <div class="seg seg-wasted" id="seg-wasted" style="width:0%"></div>
+        <div class="seg seg-free" id="seg-free" style="width:100%">32 free</div>
+      </div>
+      <div id="stats-nums">
+        <span class="sn-used" id="sn-used">Used: 0 / 32</span>
+        <span class="sn-wasted" id="sn-wasted">Wasted (internal): 0 / 32</span>
+        <span class="sn-free" id="sn-free">Free: 32 / 32</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+
+// ── Config ─────────────────────────────────────────────────────────────────
+// 4 requests × 8 slots (max_seq_len) = 32 total
+const REQS = [
+  { id:'r1', num:1, label:'Req 1', nTok:3, alloc:8, start:0 },
+  { id:'r2', num:2, label:'Req 2', nTok:6, alloc:8, start:8 },
+  { id:'r3', num:3, label:'Req 3', nTok:2, alloc:8, start:16 },
+  { id:'r4', num:4, label:'Req 4', nTok:7, alloc:8, start:24 },
+];
+// New request that arrives later and gets blocked
+const R5 = { id:'r5', num:5, label:'Req 5', nTok:9, alloc:9, start:null };
+
+// ── Build left panel cards ─────────────────────────────────────────────────
+function buildCard(r, showNow=false) {
+  const card = document.createElement('div');
+  card.className = `req-card ${r.id}${showNow?' show':''}`;
+  card.id = `card-${r.id}`;
+  card.innerHTML = `
+    <div class="req-head">
+      <span class="req-name">${r.label}</span>
+      <span class="req-badge badge-waiting" id="badge-${r.id}">Waiting</span>
+    </div>
+    <div class="req-info" id="info-${r.id}">
+      predicted <b>${r.nTok}</b> tokens &nbsp;|&nbsp; needs <b>${r.alloc}</b> contiguous slots
+    </div>`;
+  document.getElementById('left-panel').appendChild(card);
+}
+REQS.forEach(r => buildCard(r));
+buildCard(R5);  // R5 hidden until step 7
+
+function showCard(id) { document.getElementById(`card-${id}`).classList.add('show'); }
+function setCardBadge(id, cls, text) {
+  const el = document.getElementById(`badge-${id}`);
+  el.className = `req-badge ${cls}`;
+  el.textContent = text;
+}
+function setCardInfo(id, html) { document.getElementById(`info-${id}`).innerHTML = html; }
+
+// ── Build memory rows ──────────────────────────────────────────────────────
+const memGrid = document.getElementById('mem-grid');
+REQS.forEach((r, ri) => {
+  const row = document.createElement('div');
+  row.className = 'mem-row'; row.id = `row-${ri}`;
+
+  const meta = document.createElement('div');
+  meta.className = 'row-meta';
+  meta.innerHTML = `
+    <div class="row-badge ${r.id}" id="row-badge-${ri}">${r.label}</div>
+    <div class="row-addr">${r.start}–${r.start+7}</div>`;
+  row.appendChild(meta);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cells-wrap'; wrap.id = `cwrap-${ri}`;
+
+  for (let c = 0; c < 8; c++) {
+    const mc = document.createElement('div');
+    mc.className = 'mc'; mc.id = `mc-${r.start+c}`;
+    wrap.appendChild(mc);
+  }
+  row.appendChild(wrap);
+
+  const note = document.createElement('div');
+  note.className = 'waste-note'; note.id = `waste-note-${ri}`;
+  row.appendChild(note);
+
+  memGrid.appendChild(row);
+});
+
+function showRowBadge(ri) { document.getElementById(`row-badge-${ri}`).classList.add('show'); }
+function hideRowBadge(ri) { document.getElementById(`row-badge-${ri}`).classList.remove('show'); }
+
+// ── Cell helpers ───────────────────────────────────────────────────────────
+function mc(slot) { return document.getElementById(`mc-${slot}`); }
+
+function setCellState(slot, state, req='', label='') {
+  const el = mc(slot);
+  el.className = `mc${state?' '+state:''}${req?' '+req:''}`;
+  el.textContent = label;
+}
+function setCellFree(slot) { setCellState(slot, '', '', ''); }
+function setCellReserved(slot, req) { setCellState(slot, 'reserved', req, ''); }
+function setCellUsed(slot, req, tok) { setCellState(slot, 'used', req, tok); }
+function setCellWasted(slot, req) { setCellState(slot, 'wasted', req, ''); }
+function setCellHole(slot) { setCellState(slot, 'hole', '', 'free'); }
+function setCellChecking(slot) {
+  const el = mc(slot);
+  el.className = 'mc checking';
+  el.textContent = '✗';
+}
+
+// ── Stats bar ──────────────────────────────────────────────────────────────
+function updateStats(used, wasted, free) {
+  const t = 32;
+  document.getElementById('seg-used').style.width    = `${used/t*100}%`;
+  document.getElementById('seg-wasted').style.width  = `${wasted/t*100}%`;
+  document.getElementById('seg-free').style.width    = `${free/t*100}%`;
+  document.getElementById('seg-free').textContent    = free > 0 ? `${free} free` : '';
+  document.getElementById('sn-used').textContent     = `Used: ${used} / ${t} (${Math.round(used/t*100)}%)`;
+  document.getElementById('sn-wasted').textContent   = `Wasted (internal): ${wasted} / ${t} (${Math.round(wasted/t*100)}%)`;
+  document.getElementById('sn-free').textContent     = `Free: ${free} / ${t}`;
+}
+
+// ── Frag banner ────────────────────────────────────────────────────────────
+function showBanner(text) {
+  const b = document.getElementById('frag-banner');
+  b.textContent = text; b.classList.add('show');
+}
+function hideBanner() { document.getElementById('frag-banner').classList.remove('show'); }
+
+// ── Waste note (per row) ───────────────────────────────────────────────────
+function showWasteNote(ri, req, waste) {
+  const el = document.getElementById(`waste-note-${ri}`);
+  el.className = `waste-note ${req} show`;
+  el.textContent = `${waste} slots wasted`;
+}
+function hideWasteNote(ri) {
+  document.getElementById(`waste-note-${ri}`).classList.remove('show');
+}
+
+// ── Row check note (external frag) ────────────────────────────────────────
+function showRowNote(ri, type, text) {
+  let el = document.getElementById(`row-note-${ri}`);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = `row-note-${ri}`;
+    document.getElementById(`cwrap-${ri}`).style.position = 'relative';
+    document.getElementById(`cwrap-${ri}`).appendChild(el);
+  }
+  el.className = `row-note ${type} show`;
+  el.textContent = text;
+}
+function hideRowNote(ri) {
+  const el = document.getElementById(`row-note-${ri}`);
+  if (el) el.classList.remove('show');
+}
+
+// ── Animated helpers ───────────────────────────────────────────────────────
+async function animReserve(ri, req, delay=45) {
+  showRowBadge(ri);
+  showCard(req.id);
+  setCardBadge(req.id, 'badge-running', 'Running');
+  for (let c = 0; c < 8; c++) {
+    setCellReserved(req.start + c, req.id);
+    mc(req.start + c).classList.add('pop');
+    mc(req.start + c).addEventListener('animationend', () => mc(req.start+c).classList.remove('pop'), {once:true});
+    await sleep(delay);
+  }
+}
+
+async function animFill(ri, req) {
+  const waste = req.alloc - req.nTok;
+  for (let c = 0; c < req.nTok; c++) {
+    setCellUsed(req.start + c, req.id, `T${c+1}`);
+    mc(req.start+c).classList.add('pop');
+    mc(req.start+c).addEventListener('animationend',()=>mc(req.start+c).classList.remove('pop'),{once:true});
+    await sleep(90);
+  }
+  await sleep(100);
+  for (let c = req.nTok; c < 8; c++) {
+    setCellWasted(req.start + c, req.id);
+    mc(req.start+c).classList.add('pop');
+    mc(req.start+c).addEventListener('animationend',()=>mc(req.start+c).classList.remove('pop'),{once:true});
+    await sleep(60);
+  }
+  if (waste > 0) showWasteNote(ri, req.id, waste);
+}
+
+async function animFree(ri, req) {
+  setCardBadge(req.id, 'badge-complete', 'Complete ✓');
+  for (let c = 0; c < 8; c++) {
+    setCellHole(req.start + c);
+    await sleep(40);
+  }
+  hideWasteNote(ri);
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  for (let i = 0; i < 32; i++) setCellFree(i);
+  REQS.forEach((r, ri) => {
+    hideRowBadge(ri); hideWasteNote(ri); hideRowNote(ri);
+    const card = document.getElementById(`card-${r.id}`);
+    if (card) { card.classList.remove('show'); setCardBadge(r.id,'badge-waiting','Waiting'); }
+  });
+  const r5card = document.getElementById('card-r5');
+  if (r5card) { r5card.classList.remove('show'); setCardBadge('r5','badge-waiting','Waiting'); }
+  updateStats(0, 0, 32); hideBanner();
+}
+
+// ── Instant state ──────────────────────────────────────────────────────────
+function applyInstant(n) {
+  if (n <= 0) return;
+
+  // n>=1: R1 reserved
+  REQS.forEach((r, ri) => {
+    if (n < ri+1) return; // only show rows up to n
+  });
+
+  // Helper: apply a full row state
+  function applyRow(ri, state) {
+    const r = REQS[ri];
+    showRowBadge(ri); showCard(r.id);
+    if (state === 'reserved') {
+      for (let c = 0; c < 8; c++) setCellReserved(r.start+c, r.id);
+      setCardBadge(r.id,'badge-running','Running');
+    } else if (state === 'filled') {
+      for (let c = 0; c < r.nTok; c++) setCellUsed(r.start+c, r.id, `T${c+1}`);
+      for (let c = r.nTok; c < 8; c++) setCellWasted(r.start+c, r.id);
+      showWasteNote(ri, r.id, r.alloc - r.nTok);
+      setCardBadge(r.id,'badge-running','Running');
+    } else if (state === 'hole') {
+      for (let c = 0; c < 8; c++) setCellHole(r.start+c);
+      hideWasteNote(ri);
+      setCardBadge(r.id,'badge-complete','Complete ✓');
+    }
+  }
+
+  if (n >= 1) applyRow(0, 'reserved');
+  if (n >= 2) applyRow(0, 'filled');
+  if (n >= 3) applyRow(1, 'filled');
+  if (n >= 4) applyRow(2, 'filled');
+  if (n >= 5) {
+    applyRow(3, 'filled');
+    updateStats(18, 14, 0);
+    showBanner('⚠ Internal Fragmentation — 44% of memory is idle but locked');
+  } else {
+    const used = [0,3,9,11,18][Math.min(n,4)];
+    const wasted = [0,0,5,7,13,14][Math.min(n,5)];
+    const free = 32 - used - wasted - (n>=1?n>=2?0:0:0);
+    // simple stat update based on step
+    if (n===1) updateStats(0,0,32);
+    else if (n===2) updateStats(3,5,24);
+    else if (n===3) updateStats(9,7,16);
+    else if (n===4) updateStats(11,13,8);
+  }
+
+  if (n >= 6) {
+    applyRow(0, 'hole');
+    applyRow(2, 'hole');
+    showBanner('⚠ External Fragmentation — 16 free slots split by a live allocation');
+    updateStats(13, 3, 16);
+  }
+
+  if (n >= 7) {
+    // R5 blocked
+    showCard('r5');
+    setCardBadge('r5','badge-blocked','BLOCKED');
+    setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous — no gap fits');
+    // Show holes as checked/failed
+    for (let c = 0; c < 8; c++) setCellChecking(0*8 + c);
+    for (let c = 0; c < 8; c++) setCellChecking(2*8 + c);
+    showRowNote(0, 'too-small', '✗ Only 8 slots — need 9');
+    showRowNote(2, 'too-small', '✗ Only 8 slots — need 9');
+    showBanner('✗ External Fragmentation — R5 BLOCKED despite 16 free slots');
+  }
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Without PagedAttention, the allocator must reserve a contiguous region for each request sized to its predicted sequence length. The system cannot know in advance how many tokens a request will actually generate, so it pre-reserves based on a per-request estimate. 32 total slots, all free.',
+    async run() {}
+  },
+  {
+    desc: 'Request 1 arrives. Its predicted sequence length is 8 tokens, so the allocator immediately locks in 8 contiguous slots (0–7). The allocation must be contiguous — all tokens for a request must land in consecutive memory addresses for the attention computation to work.',
+    async run() { await animReserve(0, REQS[0]); }
+  },
+  {
+    desc: 'R1 generates T1, T2, T3 and finishes. Only 3 of 8 reserved slots were used. The remaining 5 are locked for the duration of R1\'s lifetime — no other request can use them. This is internal fragmentation: wasted space inside a live allocation because the prediction overshot the actual generation.',
+    async run() {
+      await animFill(0, REQS[0]);
+      updateStats(3, 5, 24);
+      showBanner('⚠ Internal Fragmentation — 5/8 slots in R1\'s region are idle');
+    }
+  },
+  {
+    desc: 'R2 arrives — predicted length 8, allocated slots 8–15. Generates 6 tokens, leaving 2 slots idle. R3 arrives — predicted length 8, allocated slots 16–23. Generates only 2 tokens, leaving 6 idle. Over-reservation is the norm, not the exception: predictions are imprecise.',
+    async run() {
+      hideBanner();
+      await animReserve(1, REQS[1]);
+      await animFill(1, REQS[1]);
+      updateStats(9, 7, 16);
+    }
+  },
+  {
+    desc: 'R3 arrives — predicted length 8, allocated slots 16–23. Generates only 2 tokens. 75% waste in R3\'s region alone. 8 slots still free.',
+    async run() {
+      await animReserve(2, REQS[2]);
+      await animFill(2, REQS[2]);
+      updateStats(11, 13, 8);
+    }
+  },
+  {
+    desc: 'R4 arrives — predicted length 8, allocated slots 24–31. Generates 7 tokens, 1 slot idle. Memory is now 100% allocated. Stats: 18/32 slots hold real KV data (56%), 14/32 slots are reserved-but-idle (44%). The system refuses new requests even though nearly half of RAM is empty.',
+    async run() {
+      await animReserve(3, REQS[3]);
+      await animFill(3, REQS[3]);
+      updateStats(18, 14, 0);
+      showBanner('⚠ Internal Fragmentation — 44% of memory locked but idle');
+    }
+  },
+  {
+    desc: 'R1 and R3 finish. Their entire 8-slot regions (0–7 and 16–23) are freed — the KV cache is gone. 16 slots released. Surely a new request can be served now?',
+    async run() {
+      hideBanner();
+      await Promise.all([
+        animFree(0, REQS[0]),
+        animFree(2, REQS[2]),
+      ]);
+      updateStats(13, 3, 16);
+      showBanner('⚠ External Fragmentation — 16 free slots, but can they be used?');
+    }
+  },
+  {
+    desc: 'Request 5 arrives with a predicted length of 9 tokens — just 1 more than each earlier request. It needs 9 contiguous free slots. Hole 1 (slots 0–7): only 8 slots — too small by 1. Hole 2 (slots 16–23): also only 8 — too small. R2\'s live allocation (slots 8–15) sits between them, preventing any merge. R5 is BLOCKED despite 16 total free slots.',
+    async run() {
+      showCard('r5');
+      setCardBadge('r5','badge-waiting','Checking...');
+      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous slots');
+      await sleep(400);
+
+      // Check hole 1
+      for (let c = 0; c < 8; c++) { setCellChecking(c); await sleep(40); }
+      await sleep(300);
+      showRowNote(0, 'too-small', '✗ Only 8 slots — need 9');
+      await sleep(600);
+
+      // Check hole 2
+      for (let c = 0; c < 8; c++) { setCellChecking(16+c); await sleep(40); }
+      await sleep(300);
+      showRowNote(2, 'too-small', '✗ Only 8 slots — need 9');
+      await sleep(500);
+
+      setCardBadge('r5','badge-blocked','BLOCKED');
+      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous — no gap fits');
+      showBanner('✗ External Fragmentation — R5 BLOCKED despite 16 free slots total');
+    }
+  },
+  {
+    desc: 'Both fragmentation types shown. Internal: 44% of allocated memory was idle — wasted because predicted lengths overshoot actual generation. External: 16 free slots couldn\'t satisfy R5\'s 9-slot need because R2 split them into two non-adjacent holes of 8. PagedAttention eliminates both: blocks are allocated on-demand one at a time (only the last block can be partially empty), and the block table maps non-contiguous physical blocks so gaps never occur.',
+    async run() {}
+  },
+];
+
+// ── Navigation ────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else {
+    if (n - cur > 1) { resetAll(); applyInstant(n-1); }
+    await STEPS[n].run();
+  }
+  cur = n; busy = false; updateUI();
+}
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length-1 && playActive) { await goTo(cur+1); await sleep(1000); }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#43a047'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) { ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id => document.getElementById(id).disabled = !en); }
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' active':'');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',  () => { stopPlay(); goTo(cur-1); });
+document.getElementById('btn-next').addEventListener('click',  () => { stopPlay(); goTo(cur+1); });
+document.getElementById('btn-play').addEventListener('click',  playAll);
+document.getElementById('btn-reset').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if (e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>
