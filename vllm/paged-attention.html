@@ -208,7 +208,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <a class="home-btn" href="index.html">← Home</a>
     <h1>PagedAttention</h1>
   </div>
-  <span id="step-pill">Step 1 / 11</span>
+  <span id="step-pill">Step 1 / 14</span>
 </div>
 
 <div id="stage">
@@ -439,6 +439,73 @@ async function fillSlotsBatch(pbId, count, startTokIdx, delayMs = 110) {
   }
 }
 
+async function flyFree(pbId) {
+  const blk  = document.getElementById(`pb${pbId}`);
+  const chip = document.getElementById(`fpc${pbId}`);
+  const stRect   = stage.getBoundingClientRect();
+  const blkRect  = blk.getBoundingClientRect();
+  const chipRect = chip.getBoundingClientRect();
+  const reqClass = ['r1','r2','r3','r4'].find(c => blk.classList.contains(c));
+  const def = reqClass ? REQ_DEFS.find(d => d.id === reqClass) : null;
+  const color = def ? def.color : '#43a047';
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `left:${blkRect.left-stRect.left}px;top:${blkRect.top-stRect.top}px;width:${blkRect.width}px;height:${blkRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  stage.appendChild(fl);
+
+  // Clear block immediately
+  blk.className = 'pb'; blk.style = '';
+  document.getElementById(`pbo${pbId}`).textContent = '';
+  for (let s = 0; s < 4; s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.className = 'kv-slot'; sl.textContent = '';
+  }
+
+  await raf2(); fl.style.opacity = '1'; await raf2();
+  fl.style.left   = `${chipRect.left-stRect.left}px`;
+  fl.style.top    = `${chipRect.top-stRect.top}px`;
+  fl.style.width  = `${chipRect.width}px`;
+  fl.style.height = `${chipRect.height}px`;
+  fl.style.borderRadius = '4px';
+  await sleep(700);
+  chip.classList.remove('gone');
+  fl.remove();
+}
+
+async function flyAllocateNoTable(req, pbId, ownerLabel) {
+  const def   = REQ_DEFS.find(d => d.id === req);
+  const color = def.color;
+  const fromEl = document.getElementById(`fpc${pbId}`);
+  const toEl   = document.getElementById(`pb${pbId}`);
+  const stRect   = stage.getBoundingClientRect();
+  const fromRect = fromEl.getBoundingClientRect();
+  const toRect   = toEl.getBoundingClientRect();
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `left:${fromRect.left-stRect.left}px;top:${fromRect.top-stRect.top}px;width:${fromRect.width}px;height:${fromRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  stage.appendChild(fl);
+  fromEl.classList.add('gone');
+
+  await raf2(); fl.style.opacity = '1'; await raf2();
+  fl.style.left = `${toRect.left-stRect.left}px`;
+  fl.style.top  = `${toRect.top-stRect.top}px`;
+  fl.style.width = `${toRect.width}px`;
+  fl.style.height = `${toRect.height}px`;
+  fl.style.borderRadius = '7px';
+  await sleep(720);
+
+  const blk = document.getElementById(`pb${pbId}`);
+  blk.classList.add(req, 'pulse', 'new-glow');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  fl.remove();
+  await sleep(380);
+  blk.classList.remove('new-glow', 'pulse');
+}
+
 // ── Instant-state helpers ──────────────────────────────────────────────────
 function setBlkInst(pbId, req, lbl) {
   document.getElementById(`pb${pbId}`).classList.add(req);
@@ -456,8 +523,10 @@ function markGone(pbId) { document.getElementById(`fpc${pbId}`).classList.add('g
 
 function showAllCards() {
   REQ_DEFS.forEach(({ id }) => {
-    document.getElementById(`card-${id}`).classList.add('show');
-    document.getElementById(`card-${id}`).querySelectorAll('.tok').forEach(t => t.classList.add('show'));
+    const card = document.getElementById(`card-${id}`);
+    card.classList.add('show');
+    card.style.opacity = '';
+    card.querySelectorAll('.tok').forEach(t => t.classList.add('show'));
     showBtRow(id);
   });
 }
@@ -478,6 +547,7 @@ function resetAll() {
   REQ_DEFS.forEach(({ id }) => {
     const card = document.getElementById(`card-${id}`);
     card.classList.remove('show');
+    card.style.opacity = '';
     card.querySelectorAll('.tok').forEach(t => t.classList.remove('show', 'highlight'));
     hideBtRow(id);
     for (let lb = 0; lb < 4; lb++) {
@@ -545,6 +615,38 @@ function applyInstant(n) {
       const pb = BLOCK_MAP[id][3]; const cnt = SLOT_COUNTS[id][3];
       for (let s = 0; s < cnt; s++) fillSlotInst(pb, s, `T${s+13}`);
     });
+  }
+
+  // Step 11: R1 finishes — blocks freed back to pool
+  if (n >= 11) {
+    BLOCK_MAP.r1.forEach(pb => {
+      const blk = document.getElementById(`pb${pb}`);
+      blk.className = 'pb'; blk.style = '';
+      document.getElementById(`pbo${pb}`).textContent = '';
+      for (let s = 0; s < 4; s++) {
+        const sl = document.getElementById(`pvs${pb}_${s}`);
+        sl.className = 'kv-slot'; sl.textContent = '';
+      }
+      document.getElementById(`fpc${pb}`).classList.remove('gone');
+    });
+    for (let lb = 0; lb < 4; lb++) {
+      const cell = document.getElementById(`btc-r1-${lb}`);
+      if (cell) { cell.textContent = '—'; cell.className = 'bt-cell show'; }
+    }
+    document.getElementById('card-r1').style.opacity = '0.4';
+  }
+
+  // Step 12: R3 fills the remaining 2 slots of P4 (LB3) with T15, T16
+  if (n >= 12) {
+    const pbId = BLOCK_MAP.r3[3]; // P4
+    fillSlotInst(pbId, 2, 'T15'); fillSlotInst(pbId, 3, 'T16');
+  }
+
+  // Step 13: P4 now full — R3 claims freed P0 as LB4 for T17, T18
+  if (n >= 13) {
+    setBlkInst(0, 'r3', 'R3·LB4');
+    fillSlotInst(0, 0, 'T17'); fillSlotInst(0, 1, 'T18');
+    markGone(0);
   }
 }
 
@@ -622,6 +724,41 @@ const STEPS = [
         b.addEventListener('animationend', () => b.classList.remove('pulse'), { once: true });
         await sleep(45);
       }
+    }
+  },
+  {
+    desc: 'R1 finishes generating — its 4 physical blocks (P0, P11, P6, P15) are immediately freed back to the pool. No copying, no waiting for other requests. The block table entries for R1 reset to "—".',
+    async run() {
+      const card = document.getElementById('card-r1');
+      card.style.transition = 'opacity 350ms ease';
+      card.style.opacity = '0.4';
+      await sleep(400);
+      await Promise.all(BLOCK_MAP.r1.map(pb => flyFree(pb)));
+      // Clear R1's block table cells
+      for (let lb = 0; lb < 4; lb++) {
+        const cell = document.getElementById(`btc-r1-${lb}`);
+        if (cell) { cell.textContent = '—'; cell.className = 'bt-cell show'; }
+      }
+    }
+  },
+  {
+    desc: 'R3 continues generating T15 and T16 — no new block needed. LB3 (P4) still has 2 empty slots from when R3 stopped at 14 tokens. vLLM fills those slots first before ever requesting another block from the pool.',
+    async run() {
+      const pbId = BLOCK_MAP.r3[3]; // P4
+      for (let s = 2; s < 4; s++) {
+        const slot = document.getElementById(`pvs${pbId}_${s}`);
+        slot.textContent = `T${14 + (s - 2) + 1}`;
+        slot.classList.add('filled', 'pop');
+        slot.addEventListener('animationend', () => slot.classList.remove('pop'), { once: true });
+        if (s < 3) await sleep(130);
+      }
+    }
+  },
+  {
+    desc: 'Now P4 is full. R3 generates T17 and needs a fresh block — LB4. It immediately claims P0 (just freed by R1) from the pool. Freed blocks return to the pool the moment their owner finishes, so they\'re available with zero delay.',
+    async run() {
+      await flyAllocateNoTable('r3', 0, 'R3·LB4');
+      await fillSlotsBatch(0, 2, 16, 120);
     }
   },
 ];

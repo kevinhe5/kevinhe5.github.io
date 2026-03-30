@@ -56,11 +56,11 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 
 /* The actual matrix grid */
 .mat-grid{
-  display:grid;gap:3px;
+  display:grid;gap:4px;
   transition:grid-template-rows 600ms cubic-bezier(.4,0,.2,1);
 }
 .mat-cell{
-  width:15px;height:15px;border-radius:2px;
+  width:20px;height:20px;border-radius:3px;
   background:#e2e8f0;
   transition:background 350ms ease,opacity 350ms ease,transform 350ms ease;
 }
@@ -69,6 +69,9 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 .mc-tok1{background:#43a047cc}
 .mc-tok2{background:#f57c00cc}
 .mc-tok3{background:#7c3aedcc}
+/* New decode token T5 — amber/gold */
+.mc-tok4{background:#f59e0bcc}
+.mat-cell.new-tok{outline:2px dashed #f59e0b;outline-offset:1px}
 /* Faded (non-active rows in decode mode) */
 .mat-cell.faded{opacity:0.12}
 /* Highlighted (current token row) */
@@ -98,6 +101,15 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
   margin-top:1px;
 }
 .cached-badge.show{opacity:1}
+
+/* Badge for the newly-computed token row */
+.new-tok-badge{
+  font-size:8px;font-weight:800;padding:1px 6px;border-radius:5px;
+  background:#fef3c7;color:#92400e;border:1px solid #fde68a;
+  opacity:0;transition:opacity 300ms ease;
+  margin-top:2px;display:block;
+}
+.new-tok-badge.show{opacity:1}
 
 /* Operator symbols between blocks */
 .eq-op{
@@ -195,7 +207,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <a class="home-btn" href="index.html">← Home</a>
     <h1>KV Cache</h1>
   </div>
-  <span id="step-pill">Step 1 / 9</span>
+  <span id="step-pill">Step 1 / 10</span>
 </div>
 
 <div id="stage">
@@ -219,7 +231,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <!-- Q or q_t -->
     <div class="eq-block" id="blk-q">
       <div class="mat-name" id="q-name">Q</div>
-      <div class="mat-grid" id="q-grid" style="grid-template-columns:repeat(8,15px)"></div>
+      <div class="mat-grid" id="q-grid" style="grid-template-columns:repeat(8,20px)"></div>
       <div class="dim-lbl" id="q-dim">(t × dₖ)</div>
     </div>
 
@@ -229,10 +241,11 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <div class="eq-block" id="blk-kt">
       <div class="mat-name">Kᵀ</div>
       <div style="position:relative;display:inline-block">
-        <div class="mat-grid" id="kt-grid" style="grid-template-columns:repeat(4,15px)"></div>
+        <div class="mat-grid" id="kt-grid" style="grid-template-columns:repeat(4,20px)"></div>
         <div class="cached-badge" id="kt-cache-badge">⟵ CACHED</div>
+        <div class="new-tok-badge" id="kt-new-badge">T5: embed × Wₖ → NEW ↑</div>
       </div>
-      <div class="dim-lbl">(dₖ × t)</div>
+      <div class="dim-lbl" id="kt-dim">(dₖ × t)</div>
     </div>
 
     <div class="eq-op" id="op2">=</div>
@@ -240,7 +253,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <!-- Score matrix S -->
     <div class="eq-block" id="blk-s">
       <div class="mat-name" id="s-name">S (scores)</div>
-      <div class="mat-grid" id="s-grid" style="grid-template-columns:repeat(4,15px)"></div>
+      <div class="mat-grid" id="s-grid" style="grid-template-columns:repeat(4,20px)"></div>
       <div class="dim-lbl" id="s-dim">(t × t)</div>
     </div>
 
@@ -254,7 +267,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <!-- α (attention weights after softmax) -->
     <div class="eq-block" id="blk-a">
       <div class="mat-name" id="a-name">α (weights)</div>
-      <div class="mat-grid" id="a-grid" style="grid-template-columns:repeat(4,15px)"></div>
+      <div class="mat-grid" id="a-grid" style="grid-template-columns:repeat(4,20px)"></div>
       <div class="dim-lbl" id="a-dim">(t × t)</div>
     </div>
 
@@ -264,10 +277,11 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <div class="eq-block" id="blk-v">
       <div class="mat-name">V</div>
       <div style="position:relative;display:inline-block">
-        <div class="mat-grid" id="v-grid" style="grid-template-columns:repeat(8,15px)"></div>
+        <div class="mat-grid" id="v-grid" style="grid-template-columns:repeat(8,20px)"></div>
         <div class="cached-badge" id="v-cache-badge">⟵ CACHED</div>
+        <div class="new-tok-badge" id="v-new-badge">T5: embed × Wᵥ → NEW →</div>
       </div>
-      <div class="dim-lbl">(t × dₖ)</div>
+      <div class="dim-lbl" id="v-dim">(t × dₖ)</div>
     </div>
 
     <div class="eq-op" id="op4">=</div>
@@ -275,7 +289,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
     <!-- Output -->
     <div class="eq-block" id="blk-out">
       <div class="mat-name" id="out-name">output</div>
-      <div class="mat-grid" id="out-grid" style="grid-template-columns:repeat(8,15px)"></div>
+      <div class="mat-grid" id="out-grid" style="grid-template-columns:repeat(8,20px)"></div>
       <div class="dim-lbl" id="out-dim">(t × dₖ)</div>
     </div>
 
@@ -361,8 +375,8 @@ const SCORE_LEVELS = [
   [1, 2, 2, 3],   // t3: recency bias
 ];
 
-// Decode: new token (t3) attending to all 4 positions
-const DECODE_SCORES = [1, 1, 2, 3]; // 4 attention weights for the decode query
+// Decode: new token T5 attending to T1–T5 (cached T1–T4 + itself)
+const DECODE_SCORES = [1, 1, 2, 2, 3]; // 5 attention weights — T5 attends most to itself
 
 // ── Matrix builders ────────────────────────────────────────────────────────
 function clearGrid(id) { document.getElementById(id).innerHTML = ''; }
@@ -382,7 +396,7 @@ function addCell(gridId, cls, delay=0) {
 function buildQ(rows, delayBase=0, highlightLast=false) {
   const grid = document.getElementById('q-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${D}, 15px)`;
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < D; c++) {
       const delay = delayBase + (r * D + c) * 6;
@@ -393,47 +407,52 @@ function buildQ(rows, delayBase=0, highlightLast=false) {
   }
 }
 
-// K^T matrix: rows = DK, cols = T (each column is one token's key)
-function buildKT(delayBase=0) {
+// K^T matrix: rows = DK, cols = T (+ optional new token column)
+function buildKT(delayBase=0, includeNew=false, newDelay=0) {
   const grid = document.getElementById('kt-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${T}, 15px)`;
+  const cols = includeNew ? T + 1 : T;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
   for (let r = 0; r < DK; r++) {
-    for (let c = 0; c < T; c++) {
-      addCell('kt-grid', `mc-tok${c}`, delayBase + (r * T + c) * 5);
+    for (let c = 0; c < cols; c++) {
+      if (includeNew && c === T) {
+        addCell('kt-grid', 'mc-tok4 new-tok', newDelay + r * 45);
+      } else {
+        addCell('kt-grid', `mc-tok${c}`, delayBase + (r * T + c) * 5);
+      }
     }
   }
 }
 
-// Score matrix: rows = nRows, cols = T; uses SCORE_LEVELS heatmap
+// Score matrix: rows = nRows, cols = T (or T+1 in decode with new token)
 function buildScore(nRows, delayBase=0, decodeMode=false) {
+  const cols = decodeMode ? DECODE_SCORES.length : T;
   const grid = document.getElementById('s-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${T}, 15px)`;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
   for (let r = 0; r < nRows; r++) {
-    for (let c = 0; c < T; c++) {
+    for (let c = 0; c < cols; c++) {
       let cls;
       if (decodeMode) {
-        // Single decode row: use DECODE_SCORES
         cls = `mc-attn-${DECODE_SCORES[c]}`;
       } else {
         const level = SCORE_LEVELS[r][c];
         cls = level === 0 ? 'mc-zero' : `mc-attn-${level}`;
       }
-      addCell('s-grid', cls, delayBase + (r * T + c) * 9);
+      addCell('s-grid', cls, delayBase + (r * cols + c) * 9);
     }
   }
-  // sync to alpha grid
   buildAlpha(nRows, 0, decodeMode);
 }
 
 // Alpha (same shape as score, but softer — post-softmax distribution)
 function buildAlpha(nRows, delayBase=0, decodeMode=false) {
+  const cols = decodeMode ? DECODE_SCORES.length : T;
   const grid = document.getElementById('a-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${T}, 15px)`;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
   for (let r = 0; r < nRows; r++) {
-    for (let c = 0; c < T; c++) {
+    for (let c = 0; c < cols; c++) {
       let cls;
       if (decodeMode) {
         cls = `mc-attn-${Math.max(0, DECODE_SCORES[c] - 1)}`;
@@ -441,19 +460,26 @@ function buildAlpha(nRows, delayBase=0, decodeMode=false) {
         const level = SCORE_LEVELS[r][c];
         cls = level === 0 ? 'mc-zero' : `mc-attn-${Math.max(0, level - 1)}`;
       }
-      addCell('a-grid', cls, delayBase + (r * T + c) * 7);
+      addCell('a-grid', cls, delayBase + (r * cols + c) * 7);
     }
   }
 }
 
-// V matrix: rows = T, cols = D
-function buildV(delayBase=0) {
+// V matrix: rows = T (+ optional new token row), cols = D
+function buildV(delayBase=0, includeNew=false, newDelay=0) {
   const grid = document.getElementById('v-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${D}, 15px)`;
-  for (let r = 0; r < T; r++) {
-    for (let c = 0; c < D; c++) {
-      addCell('v-grid', `mc-tok${r}`, delayBase + (r * D + c) * 4);
+  const rows = includeNew ? T + 1 : T;
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
+  for (let r = 0; r < rows; r++) {
+    if (includeNew && r === T) {
+      for (let c = 0; c < D; c++) {
+        addCell('v-grid', 'mc-tok4 new-tok', newDelay + c * 45);
+      }
+    } else {
+      for (let c = 0; c < D; c++) {
+        addCell('v-grid', `mc-tok${r}`, delayBase + (r * D + c) * 4);
+      }
     }
   }
 }
@@ -462,7 +488,7 @@ function buildV(delayBase=0) {
 function buildOut(nRows, delayBase=0) {
   const grid = document.getElementById('out-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = `repeat(${D}, 15px)`;
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
   for (let r = 0; r < nRows; r++) {
     for (let c = 0; c < D; c++) {
       addCell('out-grid', 'mc-out', delayBase + (r * D + c) * 5);
@@ -505,8 +531,14 @@ function resetAll() {
   });
   document.getElementById('kt-cache-badge').classList.remove('show');
   document.getElementById('v-cache-badge').classList.remove('show');
+  document.getElementById('kt-new-badge').classList.remove('show');
+  document.getElementById('v-new-badge').classList.remove('show');
+  document.getElementById('kt-cache-badge').textContent = '⟵ CACHED';
+  document.getElementById('v-cache-badge').textContent = '⟵ CACHED';
   document.getElementById('scale-overlay').classList.remove('show');
   setDim('q-dim','(t × dₖ)',false);
+  setDim('kt-dim','(dₖ × t)',false);
+  setDim('v-dim','(t × dₖ)',false);
   setDim('s-dim','(t × t)',false);
   setDim('a-dim','(t × t)',false);
   setDim('out-dim','(t × dₖ)',false);
@@ -520,7 +552,6 @@ function applyInstant(n) {
   if (n < 1) return;
   showBlocks('formula-bar');
   if (n >= 2) {
-    // Build full prefill matrices
     buildQ(T); buildKT(); buildV();
     showBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
   }
@@ -543,24 +574,34 @@ function applyInstant(n) {
     setDim('q-dim','(1 × dₖ)',true);
   }
   if (n >= 6) {
+    // New token T5's K and V appended to cache
+    buildKT(0, true, 0); buildV(0, true, 0);
+    setDim('kt-dim','(dₖ × t+1)',true);
+    setDim('v-dim','(t+1 × dₖ)',true);
+    document.getElementById('kt-cache-badge').textContent = 'T1–T4 ⟵ CACHED';
+    document.getElementById('v-cache-badge').textContent  = 'T1–T4 ⟵ CACHED';
+    document.getElementById('kt-cache-badge').classList.add('show');
+    document.getElementById('v-cache-badge').classList.add('show');
+    document.getElementById('kt-new-badge').classList.add('show');
+    document.getElementById('v-new-badge').classList.add('show');
+  }
+  if (n >= 7) {
     buildScore(1, 0, true); buildAlpha(1, 0, true);
     document.getElementById('s-name').textContent = 's (scores)';
     document.getElementById('a-name').textContent = 'α (weights)';
-    setDim('s-dim','(1 × t)',true);
-    setDim('a-dim','(1 × t)',true);
+    setDim('s-dim','(1 × t+1)',true);
+    setDim('a-dim','(1 × t+1)',true);
   }
-  if (n >= 7) {
+  if (n >= 8) {
     buildOut(1);
     document.getElementById('out-name').textContent = 'output';
     setDim('out-dim','(1 × dₖ)',true);
-    document.getElementById('kt-cache-badge').classList.add('show');
-    document.getElementById('v-cache-badge').classList.add('show');
     setChip('chip-mode','Matrix × Vector','Computation type',true,false);
     setChip('chip-q-shape','(1 × dₖ)','Q shape (single query)',true,false);
-    setChip('chip-score-shape','(1 × t)','Score shape (vector!)',true,false);
+    setChip('chip-score-shape','(1 × t+1)','Score shape (vector!)',true,false);
     setChip('chip-flops','O(t · dₖ) per layer','Attention FLOPs (decode)',true,false);
   }
-  if (n >= 8) {
+  if (n >= 9) {
     document.getElementById('scale-overlay').classList.add('show');
   }
 }
@@ -611,27 +652,47 @@ const STEPS = [
     }
   },
   {
-    desc: 'With a single query vector q_t (1 × dₖ), the score computation becomes: q_t · Kᵀ = (1 × dₖ) · (dₖ × t) = (1 × t). This is a matrix–vector multiplication — not a matrix–matrix multiply. The score "matrix" is now just a single row: t numbers, not t² numbers.',
+    desc: 'Before computing attention, the new token T5\'s key and value vectors must be generated from scratch: K₅ = embed(T5) × Wₖ, V₅ = embed(T5) × Wᵥ. These fresh vectors are appended to the KV cache. K and V each grow by one row (amber) — the previous T1–T4 rows are untouched in cache.',
+    async run() {
+      // Rebuild K^T with new column, existing 4 cols instant, new col animates in
+      buildKT(0, true, 350);
+      setDim('kt-dim','(dₖ × t+1)',true);
+      document.getElementById('kt-cache-badge').textContent = 'T1–T4 ⟵ CACHED';
+      await sleep(250);
+      document.getElementById('kt-cache-badge').classList.add('show');
+      await sleep(DK * 45 + 200);
+      document.getElementById('kt-new-badge').classList.add('show');
+      await sleep(300);
+      // Rebuild V with new row
+      buildV(0, true, 350);
+      setDim('v-dim','(t+1 × dₖ)',true);
+      document.getElementById('v-cache-badge').textContent  = 'T1–T4 ⟵ CACHED';
+      await sleep(250);
+      document.getElementById('v-cache-badge').classList.add('show');
+      await sleep(D * 45 + 200);
+      document.getElementById('v-new-badge').classList.add('show');
+    }
+  },
+  {
+    desc: 'Now q_t · Kᵀ = (1 × dₖ) · (dₖ × t+1) = (1 × t+1). The score vector has t+1 = 5 entries — one per cached token including T5 itself. This is still a matrix–vector multiplication, not a matrix–matrix multiply.',
     async run() {
       buildScore(1, 0, true);
       document.getElementById('s-name').textContent = 's (scores)';
-      setDim('s-dim','(1 × t)',true);
+      setDim('s-dim','(1 × t+1)',true);
       showBlocks('blk-s');
       await sleep(400);
-      setChip('chip-score-shape','(1 × t)','Score shape (vector!)',true,false);
+      setChip('chip-score-shape','(1 × t+1)','Score shape (vector!)',true,false);
       setChip('chip-q-shape','(1 × dₖ)','Q shape (single query)',true,false);
     }
   },
   {
-    desc: 'The attended output: softmax(s) · V = (1 × t) · (t × dₖ) = (1 × dₖ). Another matrix–vector multiply. K and V are loaded from cache — no recomputation needed. The final output is a single dₖ-dimensional vector: the new token\'s representation.',
+    desc: 'The attended output: softmax(s) · V = (1 × t+1) · (t+1 × dₖ) = (1 × dₖ). K and V are loaded from cache (T1–T4) and the newly-computed T5 row. The final output is a single dₖ-dimensional vector: T5\'s contextual representation.',
     async run() {
       buildAlpha(1, 0, true);
       document.getElementById('a-name').textContent = 'α (weights)';
-      setDim('a-dim','(1 × t)',true);
+      setDim('a-dim','(1 × t+1)',true);
       showBlocks('blk-a');
       await sleep(300);
-      document.getElementById('kt-cache-badge').classList.add('show');
-      document.getElementById('v-cache-badge').classList.add('show');
       await sleep(200);
       buildOut(1, 100);
       document.getElementById('out-name').textContent = 'output';

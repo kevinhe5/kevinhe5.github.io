@@ -45,14 +45,10 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 /* ── Right panel ─────────────────────────────────────────────────────────── */
 #right-panel{flex:1;padding:13px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
 
-/* Address space header */
-#addr-hdr{display:flex;align-items:flex-end;padding-left:72px;gap:0;flex-shrink:0}
-.addr-tick{font-size:8px;color:#bbb;font-weight:600;text-align:left}
-
 /* Memory rows */
-#mem-grid{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
-.mem-row{display:flex;align-items:center;gap:6px}
-.row-meta{width:64px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+#mem-grid{display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+.mem-row{display:flex;align-items:stretch;gap:8px}
+.row-meta{width:64px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:2px}
 .row-badge{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:800;opacity:0;transition:opacity 300ms ease;text-align:center}
 .row-badge.show{opacity:1}
 .row-badge.r1{background:#dbeeff;color:#1e88e5}
@@ -60,41 +56,56 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
 .row-badge.r3{background:#e8f5e9;color:#43a047}
 .row-badge.r4{background:#f3e8ff;color:#8e24aa}
 .row-addr{font-size:7px;color:#bbb;font-weight:600}
-.cells-wrap{display:flex;gap:2px;flex:1;position:relative}
+.cells-wrap{display:flex;gap:8px;flex:1;position:relative}
 
-/* Memory cells */
-.mc{
-  flex:1;height:46px;
-  border-radius:4px;border:1.5px solid #d4d8f0;background:#f0f2fa;
-  display:flex;align-items:center;justify-content:center;
-  font-size:8.5px;font-weight:700;color:#ccc;
-  transition:all 280ms ease;
-  position:relative;overflow:hidden;
+/* Paged-attention-style physical blocks */
+.fblk{
+  border-radius:9px;border:2px solid #d4d8f0;background:#f5f6fc;
+  padding:7px 8px;display:flex;flex-direction:column;gap:4px;flex:1;
+  transition:background 280ms ease,border-color 280ms ease,opacity 280ms ease;
 }
-/* Used */
-.mc.used.r1{background:#dbeeff;border-color:#1e88e5;color:#1565c0}
-.mc.used.r2{background:#fff3e0;border-color:#f57c00;color:#e65100}
-.mc.used.r3{background:#e8f5e9;border-color:#43a047;color:#1b5e20}
-.mc.used.r4{background:#f3e8ff;border-color:#8e24aa;color:#4a148c}
-/* Reserved (allocated but not yet written — just for step 1) */
-.mc.reserved{border-style:dashed}
-.mc.reserved.r1{background:#dbeeff55;border-color:#1e88e5;color:#1e88e588}
-.mc.reserved.r2{background:#fff3e055;border-color:#f57c00;color:#f57c0088}
-.mc.reserved.r3{background:#e8f5e955;border-color:#43a047;color:#43a04788}
-.mc.reserved.r4{background:#f3e8ff55;border-color:#8e24aa;color:#8e24aa88}
-/* Wasted — diagonal stripe shows the space is locked but empty */
-.mc.wasted.r1{background:repeating-linear-gradient(-45deg,#dbeeff 0,#dbeeff 3px,#a8c7f0 3px,#a8c7f0 6px);border-color:#1e88e5;color:transparent}
-.mc.wasted.r2{background:repeating-linear-gradient(-45deg,#fff3e0 0,#fff3e0 3px,#ffcc80 3px,#ffcc80 6px);border-color:#f57c00;color:transparent}
-.mc.wasted.r3{background:repeating-linear-gradient(-45deg,#e8f5e9 0,#e8f5e9 3px,#a5d6a7 3px,#a5d6a7 6px);border-color:#43a047;color:transparent}
-.mc.wasted.r4{background:repeating-linear-gradient(-45deg,#f3e8ff 0,#f3e8ff 3px,#ce93d8 3px,#ce93d8 6px);border-color:#8e24aa;color:transparent}
-/* Freed (hole after request completes) */
-.mc.hole{background:#fef9c3;border-color:#ca8a04;border-style:dashed;color:#a16207}
-/* Hole being checked by R5 — red highlight */
-.mc.checking{background:#fee2e2;border-color:#dc2626;border-style:solid;color:#dc2626;animation:checkPulse 500ms ease}
+.fblk.pop{animation:mcPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes mcPop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+/* Reserved */
+.fblk.reserved.r1{background:#dbeeff44;border-color:#1e88e5;border-style:dashed}
+.fblk.reserved.r2{background:#fff3e044;border-color:#f57c00;border-style:dashed}
+.fblk.reserved.r3{background:#e8f5e944;border-color:#43a047;border-style:dashed}
+.fblk.reserved.r4{background:#f3e8ff44;border-color:#8e24aa;border-style:dashed}
+/* Active (filled/wasted) */
+.fblk.r1{background:#dbeeff;border-color:#1e88e5}
+.fblk.r2{background:#fff3e0;border-color:#f57c00}
+.fblk.r3{background:#e8f5e9;border-color:#43a047}
+.fblk.r4{background:#f3e8ff;border-color:#8e24aa}
+/* Freed hole */
+.fblk.hole{background:#fef9c3;border-color:#ca8a04;border-style:dashed}
+/* Checking */
+.fblk.checking{background:#fee2e2;border-color:#dc2626;animation:checkPulse 500ms ease}
 @keyframes checkPulse{0%,100%{border-color:#dc2626}50%{box-shadow:0 0 0 3px #dc262640}}
-/* Slot pop animation */
-.mc.pop{animation:mcPop 300ms cubic-bezier(.34,1.56,.64,1)}
-@keyframes mcPop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+
+.fblk-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}
+.fblk-id{font-size:8px;font-weight:700;color:#bbb}
+.fblk.r1 .fblk-id{color:#1e88e5}.fblk.r2 .fblk-id{color:#f57c00}
+.fblk.r3 .fblk-id{color:#43a047}.fblk.r4 .fblk-id{color:#8e24aa}
+.fblk.hole .fblk-id{color:#a16207}.fblk.checking .fblk-id{color:#dc2626}
+.fblk.reserved .fblk-id{opacity:.7}
+.fblk-owner{font-size:7px;font-weight:600;color:#ccc}
+.fblk.r1 .fblk-owner{color:#1565c0}.fblk.r2 .fblk-owner{color:#e65100}
+.fblk.r3 .fblk-owner{color:#1b5e20}.fblk.r4 .fblk-owner{color:#4a148c}
+.fblk.hole .fblk-owner{color:#a16207}
+
+.fkv-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.fs{height:16px;border-radius:3px;background:#e4e8f4;transition:background 200ms ease}
+.fs.pop{animation:slotPop 280ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+/* Slot states */
+.fs.used.r1{background:#1e88e5}.fs.used.r2{background:#f57c00}
+.fs.used.r3{background:#43a047}.fs.used.r4{background:#8e24aa}
+.fs.wasted.r1{background:repeating-linear-gradient(-45deg,#c4dcf5 0,#c4dcf5 3px,#dbeeff 3px,#dbeeff 6px)}
+.fs.wasted.r2{background:repeating-linear-gradient(-45deg,#ffd180 0,#ffd180 3px,#fff3e0 3px,#fff3e0 6px)}
+.fs.wasted.r3{background:repeating-linear-gradient(-45deg,#a5d6a7 0,#a5d6a7 3px,#e8f5e9 3px,#e8f5e9 6px)}
+.fs.wasted.r4{background:repeating-linear-gradient(-45deg,#ce93d8 0,#ce93d8 3px,#f3e8ff 3px,#f3e8ff 6px)}
+.fs.hole{background:#fef9c3}
+.fs.checking{background:#fee2e2}
 
 /* Waste annotation that appears on the right of a row */
 .waste-note{
@@ -176,7 +187,7 @@ h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
   <div class="divider"></div>
   <div id="right-panel">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div class="panel-label" style="margin:0">Contiguous Memory — 32 slots, allocated per predicted length</div>
+      <div class="panel-label" style="margin:0">GPU Memory — 8 blocks (block size = 4 slots), pre-reserved per request</div>
       <div id="frag-banner"></div>
     </div>
     <div id="mem-grid"><!-- rows injected by JS --></div>
@@ -210,33 +221,34 @@ const raf   = () => new Promise(r => requestAnimationFrame(r));
 const raf2  = () => raf().then(raf);
 
 // ── Config ─────────────────────────────────────────────────────────────────
-// 4 requests × 8 slots (max_seq_len) = 32 total
+// block_size = 4 slots, 2 blocks per request × 4 requests = 8 blocks = 32 slots
+const BLOCK_SIZE = 4;
 const REQS = [
-  { id:'r1', num:1, label:'Req 1', nTok:3, alloc:8, start:0 },
-  { id:'r2', num:2, label:'Req 2', nTok:6, alloc:8, start:8 },
-  { id:'r3', num:3, label:'Req 3', nTok:2, alloc:8, start:16 },
-  { id:'r4', num:4, label:'Req 4', nTok:7, alloc:8, start:24 },
+  { id:'r1', num:1, label:'Req 1', nTok:3, alloc:8 },
+  { id:'r2', num:2, label:'Req 2', nTok:6, alloc:8 },
+  { id:'r3', num:3, label:'Req 3', nTok:2, alloc:8 },
+  { id:'r4', num:4, label:'Req 4', nTok:7, alloc:8 },
 ];
-// New request that arrives later and gets blocked
-const R5 = { id:'r5', num:5, label:'Req 5', nTok:9, alloc:9, start:null };
+const R5 = { id:'r5', num:5, label:'Req 5', nTok:9, nBlocks:3 };
 
 // ── Build left panel cards ─────────────────────────────────────────────────
-function buildCard(r, showNow=false) {
+function buildCard(r) {
   const card = document.createElement('div');
-  card.className = `req-card ${r.id}${showNow?' show':''}`;
+  card.className = `req-card ${r.id}`;
   card.id = `card-${r.id}`;
+  const info = r.nBlocks
+    ? `predicted <b>${r.nTok}</b> tokens &nbsp;|&nbsp; needs <b>${r.nBlocks} contiguous blocks</b>`
+    : `predicted <b>${r.nTok}</b> tokens &nbsp;|&nbsp; reserves <b>2 blocks</b> (${r.alloc} slots)`;
   card.innerHTML = `
     <div class="req-head">
       <span class="req-name">${r.label}</span>
       <span class="req-badge badge-waiting" id="badge-${r.id}">Waiting</span>
     </div>
-    <div class="req-info" id="info-${r.id}">
-      predicted <b>${r.nTok}</b> tokens &nbsp;|&nbsp; needs <b>${r.alloc}</b> contiguous slots
-    </div>`;
+    <div class="req-info" id="info-${r.id}">${info}</div>`;
   document.getElementById('left-panel').appendChild(card);
 }
 REQS.forEach(r => buildCard(r));
-buildCard(R5);  // R5 hidden until step 7
+buildCard(R5);
 
 function showCard(id) { document.getElementById(`card-${id}`).classList.add('show'); }
 function setCardBadge(id, cls, text) {
@@ -246,7 +258,7 @@ function setCardBadge(id, cls, text) {
 }
 function setCardInfo(id, html) { document.getElementById(`info-${id}`).innerHTML = html; }
 
-// ── Build memory rows ──────────────────────────────────────────────────────
+// ── Build memory rows — 2 paged-attention-style blocks per row ─────────────
 const memGrid = document.getElementById('mem-grid');
 REQS.forEach((r, ri) => {
   const row = document.createElement('div');
@@ -256,16 +268,23 @@ REQS.forEach((r, ri) => {
   meta.className = 'row-meta';
   meta.innerHTML = `
     <div class="row-badge ${r.id}" id="row-badge-${ri}">${r.label}</div>
-    <div class="row-addr">${r.start}–${r.start+7}</div>`;
+    <div class="row-addr">P${ri*2}–P${ri*2+1}</div>`;
   row.appendChild(meta);
 
   const wrap = document.createElement('div');
   wrap.className = 'cells-wrap'; wrap.id = `cwrap-${ri}`;
 
-  for (let c = 0; c < 8; c++) {
-    const mc = document.createElement('div');
-    mc.className = 'mc'; mc.id = `mc-${r.start+c}`;
-    wrap.appendChild(mc);
+  for (let bi = 0; bi < 2; bi++) {
+    const blk = document.createElement('div');
+    blk.className = 'fblk'; blk.id = `fblk-${ri}-${bi}`;
+    const slots = [0,1,2,3].map(si=>`<div class="fs" id="fs-${ri}-${bi}-${si}"></div>`).join('');
+    blk.innerHTML = `
+      <div class="fblk-head">
+        <span class="fblk-id">P${ri*2+bi}</span>
+        <span class="fblk-owner" id="fbo-${ri}-${bi}"></span>
+      </div>
+      <div class="fkv-grid">${slots}</div>`;
+    wrap.appendChild(blk);
   }
   row.appendChild(wrap);
 
@@ -279,23 +298,22 @@ REQS.forEach((r, ri) => {
 function showRowBadge(ri) { document.getElementById(`row-badge-${ri}`).classList.add('show'); }
 function hideRowBadge(ri) { document.getElementById(`row-badge-${ri}`).classList.remove('show'); }
 
-// ── Cell helpers ───────────────────────────────────────────────────────────
-function mc(slot) { return document.getElementById(`mc-${slot}`); }
+// ── Block / slot helpers ───────────────────────────────────────────────────
+function getBlk(ri, bi) { return document.getElementById(`fblk-${ri}-${bi}`); }
+function getSlot(ri, bi, si) { return document.getElementById(`fs-${ri}-${bi}-${si}`); }
 
-function setCellState(slot, state, req='', label='') {
-  const el = mc(slot);
-  el.className = `mc${state?' '+state:''}${req?' '+req:''}`;
-  el.textContent = label;
+function setBlkClass(ri, bi, cls) {
+  getBlk(ri, bi).className = `fblk${cls?' '+cls:''}`;
 }
-function setCellFree(slot) { setCellState(slot, '', '', ''); }
-function setCellReserved(slot, req) { setCellState(slot, 'reserved', req, ''); }
-function setCellUsed(slot, req, tok) { setCellState(slot, 'used', req, tok); }
-function setCellWasted(slot, req) { setCellState(slot, 'wasted', req, ''); }
-function setCellHole(slot) { setCellState(slot, 'hole', '', 'free'); }
-function setCellChecking(slot) {
-  const el = mc(slot);
-  el.className = 'mc checking';
-  el.textContent = '✗';
+function setSlotClass(ri, bi, si, cls) {
+  getSlot(ri, bi, si).className = `fs${cls?' '+cls:''}`;
+}
+function clearRow(ri) {
+  for (let bi = 0; bi < 2; bi++) {
+    setBlkClass(ri, bi, '');
+    document.getElementById(`fbo-${ri}-${bi}`).textContent = '';
+    for (let si = 0; si < 4; si++) setSlotClass(ri, bi, si, '');
+  }
 }
 
 // ── Stats bar ──────────────────────────────────────────────────────────────
@@ -327,7 +345,7 @@ function hideWasteNote(ri) {
   document.getElementById(`waste-note-${ri}`).classList.remove('show');
 }
 
-// ── Row check note (external frag) ────────────────────────────────────────
+// ── Row note (external frag) ───────────────────────────────────────────────
 function showRowNote(ri, type, text) {
   let el = document.getElementById(`row-note-${ri}`);
   if (!el) {
@@ -344,50 +362,92 @@ function hideRowNote(ri) {
   if (el) el.classList.remove('show');
 }
 
+// ── Instant (non-animated) row state ──────────────────────────────────────
+function instRow(ri, state) {
+  const r = REQS[ri];
+  showRowBadge(ri); showCard(r.id);
+  if (state === 'reserved') {
+    for (let bi = 0; bi < 2; bi++) {
+      setBlkClass(ri, bi, `reserved ${r.id}`);
+      document.getElementById(`fbo-${ri}-${bi}`).textContent = r.label;
+    }
+    setCardBadge(r.id, 'badge-running', 'Running');
+  } else if (state === 'filled') {
+    let tok = 0;
+    for (let bi = 0; bi < 2; bi++) {
+      setBlkClass(ri, bi, r.id);
+      document.getElementById(`fbo-${ri}-${bi}`).textContent = r.label;
+      for (let si = 0; si < 4; si++) {
+        setSlotClass(ri, bi, si, tok < r.nTok ? `used ${r.id}` : `wasted ${r.id}`);
+        tok++;
+      }
+    }
+    showWasteNote(ri, r.id, r.alloc - r.nTok);
+    setCardBadge(r.id, 'badge-running', 'Running');
+  } else if (state === 'hole') {
+    for (let bi = 0; bi < 2; bi++) {
+      setBlkClass(ri, bi, 'hole');
+      document.getElementById(`fbo-${ri}-${bi}`).textContent = 'free';
+      for (let si = 0; si < 4; si++) setSlotClass(ri, bi, si, 'hole');
+    }
+    hideWasteNote(ri);
+    setCardBadge(r.id, 'badge-complete', 'Complete ✓');
+  } else if (state === 'checking') {
+    for (let bi = 0; bi < 2; bi++) {
+      setBlkClass(ri, bi, 'checking');
+      document.getElementById(`fbo-${ri}-${bi}`).textContent = '✗';
+      for (let si = 0; si < 4; si++) setSlotClass(ri, bi, si, 'checking');
+    }
+  }
+}
+
 // ── Animated helpers ───────────────────────────────────────────────────────
-async function animReserve(ri, req, delay=45) {
-  showRowBadge(ri);
-  showCard(req.id);
+async function animReserve(ri, req) {
+  showRowBadge(ri); showCard(req.id);
   setCardBadge(req.id, 'badge-running', 'Running');
-  for (let c = 0; c < 8; c++) {
-    setCellReserved(req.start + c, req.id);
-    mc(req.start + c).classList.add('pop');
-    mc(req.start + c).addEventListener('animationend', () => mc(req.start+c).classList.remove('pop'), {once:true});
-    await sleep(delay);
+  for (let bi = 0; bi < 2; bi++) {
+    const b = getBlk(ri, bi);
+    setBlkClass(ri, bi, `reserved ${req.id}`);
+    document.getElementById(`fbo-${ri}-${bi}`).textContent = req.label;
+    b.classList.add('pop');
+    b.addEventListener('animationend', () => b.classList.remove('pop'), {once:true});
+    await sleep(120);
   }
 }
 
 async function animFill(ri, req) {
-  const waste = req.alloc - req.nTok;
-  for (let c = 0; c < req.nTok; c++) {
-    setCellUsed(req.start + c, req.id, `T${c+1}`);
-    mc(req.start+c).classList.add('pop');
-    mc(req.start+c).addEventListener('animationend',()=>mc(req.start+c).classList.remove('pop'),{once:true});
-    await sleep(90);
+  let tok = 0;
+  for (let bi = 0; bi < 2; bi++) {
+    setBlkClass(ri, bi, req.id);
+    document.getElementById(`fbo-${ri}-${bi}`).textContent = req.label;
+    for (let si = 0; si < 4; si++) {
+      const sl = getSlot(ri, bi, si);
+      const cls = tok < req.nTok ? `used ${req.id}` : `wasted ${req.id}`;
+      setSlotClass(ri, bi, si, cls);
+      sl.classList.add('pop');
+      sl.addEventListener('animationend', () => sl.classList.remove('pop'), {once:true});
+      tok++;
+      await sleep(tok <= req.nTok ? 80 : 55);
+    }
   }
-  await sleep(100);
-  for (let c = req.nTok; c < 8; c++) {
-    setCellWasted(req.start + c, req.id);
-    mc(req.start+c).classList.add('pop');
-    mc(req.start+c).addEventListener('animationend',()=>mc(req.start+c).classList.remove('pop'),{once:true});
-    await sleep(60);
-  }
-  if (waste > 0) showWasteNote(ri, req.id, waste);
+  if (req.alloc - req.nTok > 0) showWasteNote(ri, req.id, req.alloc - req.nTok);
 }
 
 async function animFree(ri, req) {
   setCardBadge(req.id, 'badge-complete', 'Complete ✓');
-  for (let c = 0; c < 8; c++) {
-    setCellHole(req.start + c);
-    await sleep(40);
+  for (let bi = 0; bi < 2; bi++) {
+    setBlkClass(ri, bi, 'hole');
+    document.getElementById(`fbo-${ri}-${bi}`).textContent = 'free';
+    for (let si = 0; si < 4; si++) setSlotClass(ri, bi, si, 'hole');
+    await sleep(80);
   }
   hideWasteNote(ri);
 }
 
 // ── Reset ──────────────────────────────────────────────────────────────────
 function resetAll() {
-  for (let i = 0; i < 32; i++) setCellFree(i);
   REQS.forEach((r, ri) => {
+    clearRow(ri);
     hideRowBadge(ri); hideWasteNote(ri); hideRowNote(ri);
     const card = document.getElementById(`card-${r.id}`);
     if (card) { card.classList.remove('show'); setCardBadge(r.id,'badge-waiting','Waiting'); }
@@ -400,67 +460,32 @@ function resetAll() {
 // ── Instant state ──────────────────────────────────────────────────────────
 function applyInstant(n) {
   if (n <= 0) return;
-
-  // n>=1: R1 reserved
-  REQS.forEach((r, ri) => {
-    if (n < ri+1) return; // only show rows up to n
-  });
-
-  // Helper: apply a full row state
-  function applyRow(ri, state) {
-    const r = REQS[ri];
-    showRowBadge(ri); showCard(r.id);
-    if (state === 'reserved') {
-      for (let c = 0; c < 8; c++) setCellReserved(r.start+c, r.id);
-      setCardBadge(r.id,'badge-running','Running');
-    } else if (state === 'filled') {
-      for (let c = 0; c < r.nTok; c++) setCellUsed(r.start+c, r.id, `T${c+1}`);
-      for (let c = r.nTok; c < 8; c++) setCellWasted(r.start+c, r.id);
-      showWasteNote(ri, r.id, r.alloc - r.nTok);
-      setCardBadge(r.id,'badge-running','Running');
-    } else if (state === 'hole') {
-      for (let c = 0; c < 8; c++) setCellHole(r.start+c);
-      hideWasteNote(ri);
-      setCardBadge(r.id,'badge-complete','Complete ✓');
-    }
-  }
-
-  if (n >= 1) applyRow(0, 'reserved');
-  if (n >= 2) applyRow(0, 'filled');
-  if (n >= 3) applyRow(1, 'filled');
-  if (n >= 4) applyRow(2, 'filled');
+  if (n >= 1) instRow(0, 'reserved');
+  if (n >= 2) instRow(0, 'filled');
+  if (n >= 3) instRow(1, 'filled');
+  if (n >= 4) instRow(2, 'filled');
   if (n >= 5) {
-    applyRow(3, 'filled');
+    instRow(3, 'filled');
     updateStats(18, 14, 0);
     showBanner('⚠ Internal Fragmentation — 44% of memory is idle but locked');
   } else {
-    const used = [0,3,9,11,18][Math.min(n,4)];
-    const wasted = [0,0,5,7,13,14][Math.min(n,5)];
-    const free = 32 - used - wasted - (n>=1?n>=2?0:0:0);
-    // simple stat update based on step
     if (n===1) updateStats(0,0,32);
     else if (n===2) updateStats(3,5,24);
     else if (n===3) updateStats(9,7,16);
     else if (n===4) updateStats(11,13,8);
   }
-
   if (n >= 6) {
-    applyRow(0, 'hole');
-    applyRow(2, 'hole');
-    showBanner('⚠ External Fragmentation — 16 free slots split by a live allocation');
+    instRow(0, 'hole'); instRow(2, 'hole');
+    showBanner('⚠ External Fragmentation — 16 free slots in 2 separate gaps');
     updateStats(13, 3, 16);
   }
-
   if (n >= 7) {
-    // R5 blocked
     showCard('r5');
     setCardBadge('r5','badge-blocked','BLOCKED');
-    setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous — no gap fits');
-    // Show holes as checked/failed
-    for (let c = 0; c < 8; c++) setCellChecking(0*8 + c);
-    for (let c = 0; c < 8; c++) setCellChecking(2*8 + c);
-    showRowNote(0, 'too-small', '✗ Only 8 slots — need 9');
-    showRowNote(2, 'too-small', '✗ Only 8 slots — need 9');
+    setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>3 contiguous blocks</b> — no gap fits');
+    instRow(0, 'checking'); instRow(2, 'checking');
+    showRowNote(0, 'too-small', '✗ Only 2 free blocks — need 3');
+    showRowNote(2, 'too-small', '✗ Only 2 free blocks — need 3');
     showBanner('✗ External Fragmentation — R5 BLOCKED despite 16 free slots');
   }
 }
@@ -472,19 +497,19 @@ const STEPS = [
     async run() {}
   },
   {
-    desc: 'Request 1 arrives. Its predicted sequence length is 8 tokens, so the allocator immediately locks in 8 contiguous slots (0–7). The allocation must be contiguous — all tokens for a request must land in consecutive memory addresses for the attention computation to work.',
+    desc: 'Request 1 arrives. Its predicted sequence length is 8 tokens, so the allocator immediately locks in 2 blocks (P0–P1, 8 slots total). Without PagedAttention the allocation must be contiguous — all tokens for a request must land in consecutive addresses.',
     async run() { await animReserve(0, REQS[0]); }
   },
   {
-    desc: 'R1 generates T1, T2, T3 and finishes. Only 3 of 8 reserved slots were used. The remaining 5 are locked for the duration of R1\'s lifetime — no other request can use them. This is internal fragmentation: wasted space inside a live allocation because the prediction overshot the actual generation.',
+    desc: 'R1 generates only 3 tokens and finishes. Slots 3–7 (shown as striped) are locked inside P0 and P1 for R1\'s entire lifetime — no other request can use them. This is internal fragmentation: wasted KV slots inside a live allocation because the prediction overshot actual generation.',
     async run() {
       await animFill(0, REQS[0]);
       updateStats(3, 5, 24);
-      showBanner('⚠ Internal Fragmentation — 5/8 slots in R1\'s region are idle');
+      showBanner('⚠ Internal Fragmentation — 5/8 slots in R1\'s blocks are idle');
     }
   },
   {
-    desc: 'R2 arrives — predicted length 8, allocated slots 8–15. Generates 6 tokens, leaving 2 slots idle. R3 arrives — predicted length 8, allocated slots 16–23. Generates only 2 tokens, leaving 6 idle. Over-reservation is the norm, not the exception: predictions are imprecise.',
+    desc: 'R2 arrives — predicted 8 tokens, reserves blocks P2–P3. Generates 6 tokens, 2 striped (wasted). Over-reservation is the norm: predictions are imprecise and the system must pre-commit.',
     async run() {
       hideBanner();
       await animReserve(1, REQS[1]);
@@ -493,7 +518,7 @@ const STEPS = [
     }
   },
   {
-    desc: 'R3 arrives — predicted length 8, allocated slots 16–23. Generates only 2 tokens. 75% waste in R3\'s region alone. 8 slots still free.',
+    desc: 'R3 arrives — predicted 8 tokens, reserves P4–P5. Generates only 2 tokens. 6 of 8 slots (75%) are wasted inside R3\'s blocks. Only 8 slots remain free.',
     async run() {
       await animReserve(2, REQS[2]);
       await animFill(2, REQS[2]);
@@ -501,7 +526,7 @@ const STEPS = [
     }
   },
   {
-    desc: 'R4 arrives — predicted length 8, allocated slots 24–31. Generates 7 tokens, 1 slot idle. Memory is now 100% allocated. Stats: 18/32 slots hold real KV data (56%), 14/32 slots are reserved-but-idle (44%). The system refuses new requests even though nearly half of RAM is empty.',
+    desc: 'R4 arrives — predicted 8 tokens, reserves P6–P7. Generates 7 tokens, 1 slot idle. Memory is now 100% committed. Stats: 18/32 slots hold real KV data (56%), 14/32 slots are reserved-but-idle (44%). The system rejects new requests even though nearly half of all KV slots are empty.',
     async run() {
       await animReserve(3, REQS[3]);
       await animFill(3, REQS[3]);
@@ -510,44 +535,41 @@ const STEPS = [
     }
   },
   {
-    desc: 'R1 and R3 finish. Their entire 8-slot regions (0–7 and 16–23) are freed — the KV cache is gone. 16 slots released. Surely a new request can be served now?',
+    desc: 'R1 and R3 finish. Their blocks (P0–P1 and P4–P5) are freed — 16 slots released, shown in yellow. Surely a new request can now be served?',
     async run() {
       hideBanner();
-      await Promise.all([
-        animFree(0, REQS[0]),
-        animFree(2, REQS[2]),
-      ]);
+      await Promise.all([animFree(0, REQS[0]), animFree(2, REQS[2])]);
       updateStats(13, 3, 16);
-      showBanner('⚠ External Fragmentation — 16 free slots, but can they be used?');
+      showBanner('⚠ External Fragmentation — 16 free slots in 2 separate gaps');
     }
   },
   {
-    desc: 'Request 5 arrives with a predicted length of 9 tokens — just 1 more than each earlier request. It needs 9 contiguous free slots. Hole 1 (slots 0–7): only 8 slots — too small by 1. Hole 2 (slots 16–23): also only 8 — too small. R2\'s live allocation (slots 8–15) sits between them, preventing any merge. R5 is BLOCKED despite 16 total free slots.',
+    desc: 'Request 5 arrives needing 9 tokens — that\'s 3 blocks (⌈9/4⌉). Gap 1 (P0–P1): only 2 free blocks — not enough. Gap 2 (P4–P5): also only 2 free blocks. R2\'s live blocks (P2–P3) sit between them, preventing any merge. R5 is BLOCKED despite 16 free slots spread across 4 blocks.',
     async run() {
       showCard('r5');
       setCardBadge('r5','badge-waiting','Checking...');
-      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous slots');
+      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>3 contiguous blocks</b>');
       await sleep(400);
 
-      // Check hole 1
-      for (let c = 0; c < 8; c++) { setCellChecking(c); await sleep(40); }
-      await sleep(300);
-      showRowNote(0, 'too-small', '✗ Only 8 slots — need 9');
-      await sleep(600);
+      // Check gap 1 (row 0)
+      instRow(0, 'checking');
+      await sleep(400);
+      showRowNote(0, 'too-small', '✗ Only 2 free blocks — need 3');
+      await sleep(700);
 
-      // Check hole 2
-      for (let c = 0; c < 8; c++) { setCellChecking(16+c); await sleep(40); }
-      await sleep(300);
-      showRowNote(2, 'too-small', '✗ Only 8 slots — need 9');
+      // Check gap 2 (row 2)
+      instRow(2, 'checking');
+      await sleep(400);
+      showRowNote(2, 'too-small', '✗ Only 2 free blocks — need 3');
       await sleep(500);
 
       setCardBadge('r5','badge-blocked','BLOCKED');
-      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>9</b> contiguous — no gap fits');
-      showBanner('✗ External Fragmentation — R5 BLOCKED despite 16 free slots total');
+      setCardInfo('r5','predicted <b>9</b> tokens &nbsp;|&nbsp; needs <b>3 contiguous blocks</b> — no gap fits');
+      showBanner('✗ External Fragmentation — R5 BLOCKED despite 16 free slots');
     }
   },
   {
-    desc: 'Both fragmentation types shown. Internal: 44% of allocated memory was idle — wasted because predicted lengths overshoot actual generation. External: 16 free slots couldn\'t satisfy R5\'s 9-slot need because R2 split them into two non-adjacent holes of 8. PagedAttention eliminates both: blocks are allocated on-demand one at a time (only the last block can be partially empty), and the block table maps non-contiguous physical blocks so gaps never occur.',
+    desc: 'Both fragmentation types shown. Internal: 44% of allocated memory was idle — wasted because predicted lengths overshoot actual generation. External: 16 free slots couldn\'t satisfy R5 because R2\'s live blocks (P2–P3) split them into two non-adjacent gaps of 2 blocks each. PagedAttention eliminates both: blocks are allocated one at a time on demand (only the last block can be partial), and non-contiguous blocks are stitched together via the logical block table — no contiguous reservation needed.',
     async run() {}
   },
 ];

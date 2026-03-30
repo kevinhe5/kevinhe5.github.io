@@ -65,6 +65,7 @@ h1{font-size:1.9rem;color:#1a1d3e;font-weight:800;margin-bottom:10px}
 .card.cyan  {--accent:#0891b2;--accent-light:#cffafe}
 .card.indigo{--accent:#4338ca;--accent-light:#e0e7ff}
 .card.red   {--accent:#dc2626;--accent-light:#fee2e2}
+.card.sky   {--accent:#0284c7;--accent-light:#e0f2fe}
 
 footer{margin-top:48px;font-size:.8rem;color:#aaa;text-align:center}
 </style>
@@ -124,6 +125,20 @@ footer{margin-top:48px;font-size:.8rem;color:#aaa;text-align:center}
     <span class="card-tag">Memory Sharing</span>
     <h2>Beam Search</h2>
     <p>How beam search maintains K candidate sequences, shares prompt and common-prefix KV blocks as a tree, and immediately frees memory when low-scoring beams are pruned.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+  <a class="card teal" href="paged-attention-computation.html">
+    <span class="card-tag">Computation</span>
+    <h2>Paged Attention — Block-Wise Computation</h2>
+    <p>How the attention dot-product is computed across non-contiguous physical blocks: iterate over logical blocks to gather scores, apply one softmax, then accumulate the weighted value sum — identical math to contiguous attention.</p>
+    <span class="card-cta">Explore</span>
+  </a>
+
+  <a class="card sky" href="distributed-execution.html">
+    <span class="card-tag">Distributed Systems</span>
+    <h2>Tensor Parallelism</h2>
+    <p>How vLLM distributes model weights across multiple GPUs, partitions the KV cache by attention head, uses a single block manager on the master node, and synchronizes intermediate activations with all-reduce operations.</p>
     <span class="card-cta">Explore</span>
   </a>
 
