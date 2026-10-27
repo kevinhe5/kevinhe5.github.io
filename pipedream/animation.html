@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#09111f" />
+    <title>PipeDream — See the pipeline learn</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="PipeDream explainer home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>PIPE<span>DREAM</span></span>
+      </a>
+      <nav aria-label="Page sections">
+        <a href="#pipeline">Pipeline</a>
+        <a href="#weights">Weight staleness</a>
+        <a href="#parallel">Data parallel</a>
+        <a href="index.html">DP simulator</a>
+      </nav>
+      <a class="paper-link" href="1806.03377v1.pdf" target="_blank" rel="noreferrer">Read the paper <span>↗</span></a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="eyebrow"><span></span> INTERACTIVE SYSTEMS NOTE · 06</div>
+        <div class="hero-grid">
+          <div>
+            <h1>See the<br /><em>pipeline</em> learn.</h1>
+          </div>
+          <div class="hero-copy">
+            <p>PipeDream keeps GPUs busy by letting multiple microbatches overlap. That speed creates a subtle question:</p>
+            <p class="hero-question">What happens when a gradient returns to weights that have already moved on?</p>
+            <a href="#pipeline" class="start-link">Run the trace <span>↓</span></a>
+          </div>
+        </div>
+        <div class="hero-rule">
+          <div><strong>→</strong><span><b>ACTIVATIONS</b><br />move forward</span></div>
+          <div><strong>←</strong><span><b>GRADIENTS</b><br />move backward</span></div>
+          <div><strong>W⁰</strong><span><b>WEIGHT COPIES</b><br />stay put</span></div>
+        </div>
+      </section>
+
+      <section class="simulation section-pad" id="pipeline">
+        <div class="section-heading">
+          <div>
+            <p class="kicker">01 · LIVE TRACE</p>
+            <h2>One model. Four GPUs.<br />Several moments at once.</h2>
+          </div>
+          <p>Stages split the model by layer. The middle stage is replicated across two GPUs, so it also uses data parallelism. Follow <b>microbatch 3</b> through both passes.</p>
+        </div>
+
+        <div class="sim-shell">
+          <div class="sim-toolbar">
+            <div class="trace-label">
+              <span class="live-dot"></span>
+              <span>TRACE</span>
+              <strong id="step-label">00 / 12</strong>
+            </div>
+            <div class="controls" role="group" aria-label="Animation controls">
+              <button id="reset-btn" class="icon-btn" type="button" title="Reset animation" aria-label="Reset animation">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+              <button id="play-btn" class="play-btn" type="button"><span class="play-icon">▶</span><span class="play-copy">PLAY TRACE</span></button>
+              <button id="step-btn" class="icon-btn" type="button" title="Next event" aria-label="Next event">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 5 8 7-8 7V5Z"/><path d="M18 5v14"/></svg>
+              </button>
+            </div>
+            <label class="speed-control">SPEED
+              <input id="speed-range" type="range" min="500" max="1800" value="1100" step="100" aria-label="Animation speed" />
+              <span id="speed-label">1×</span>
+            </label>
+          </div>
+
+          <div class="stage-map" id="stage-map">
+            <svg class="routes" viewBox="0 0 1000 360" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <marker id="arrow-forward" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#47d7ac"/></marker>
+                <marker id="arrow-back" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#ff705e"/></marker>
+              </defs>
+              <path class="route forward" d="M205 180 C260 180 275 180 330 180" />
+              <path class="route forward" d="M485 180 C535 180 545 105 600 105" />
+              <path class="route forward" d="M485 180 C535 180 545 255 600 255" />
+              <path class="route forward" d="M755 105 C810 105 805 180 850 180" />
+              <path class="route forward" d="M755 255 C810 255 805 180 850 180" />
+              <path class="route backward" d="M850 197 C805 197 810 122 755 122" />
+              <path class="route backward" d="M850 197 C805 197 810 272 755 272" />
+              <path class="route backward" d="M600 122 C545 122 535 197 485 197" />
+              <path class="route backward" d="M600 272 C545 272 535 197 485 197" />
+              <path class="route backward" d="M330 197 C275 197 260 197 205 197" />
+            </svg>
+
+            <div class="input-stack map-node" data-node="input">
+              <span class="node-tag">INPUT QUEUE</span>
+              <div class="batch-stack" id="batch-stack">
+                <span class="batch-pill m4">m4</span><span class="batch-pill m3">m3</span><span class="batch-pill m2">m2</span><span class="batch-pill m1">m1</span>
+              </div>
+            </div>
+
+            <article class="gpu-card stage-one" data-node="s1">
+              <div class="gpu-head"><span>STAGE 1</span><b>GPU 0</b></div>
+              <div class="chip"><i></i><span>CONV<br />BLOCKS</span></div>
+              <div class="weight-readout">LIVE <strong id="w-s1">W¹ · v0</strong></div>
+              <div class="slot" id="slot-s1">IDLE</div>
+            </article>
+
+            <div class="replica-group">
+              <div class="replica-title"><span>STAGE 2 · DATA PARALLEL ×2</span><i></i></div>
+              <article class="gpu-card replica-a" data-node="s2a">
+                <div class="gpu-head"><span>REPLICA A</span><b>GPU 1</b></div>
+                <div class="chip small"><i></i><span>ATTN</span></div>
+                <div class="weight-readout">LIVE <strong id="w-s2a">W² · v0</strong></div>
+                <div class="slot" id="slot-s2a">ODD m</div>
+              </article>
+              <article class="gpu-card replica-b" data-node="s2b">
+                <div class="gpu-head"><span>REPLICA B</span><b>GPU 2</b></div>
+                <div class="chip small"><i></i><span>ATTN</span></div>
+                <div class="weight-readout">LIVE <strong id="w-s2b">W² · v0</strong></div>
+                <div class="slot" id="slot-s2b">EVEN m</div>
+              </article>
+            </div>
+
+            <article class="gpu-card stage-three" data-node="s3">
+              <div class="gpu-head"><span>STAGE 3</span><b>GPU 3</b></div>
+              <div class="chip"><i></i><span>OUTPUT<br />HEAD</span></div>
+              <div class="weight-readout">LIVE <strong id="w-s3">W³ · v0</strong></div>
+              <div class="slot" id="slot-s3">IDLE</div>
+            </article>
+
+            <div class="loss-node map-node" data-node="loss"><span>LOSS</span><b>ℒ</b></div>
+            <div id="particles" aria-hidden="true"></div>
+          </div>
+
+          <div class="event-strip">
+            <div class="event-direction forward-mode" id="event-direction"><span id="event-arrow">→</span><b id="event-kind">READY</b></div>
+            <div class="event-copy">
+              <span id="event-kicker">PIPELINE PRIMED</span>
+              <p id="event-text">Press play. Each tick is one scheduling decision; several GPUs can work during the same tick.</p>
+            </div>
+            <div class="focused-batch"><span>FOLLOWING</span><b><i class="batch-dot m3"></i> microbatch 3</b></div>
+          </div>
+
+          <div class="timeline-wrap">
+            <div class="timeline-head"><span>GPU ACTIVITY</span><div class="legend"><i class="forward-key"></i> forward <i class="back-key"></i> backward <i class="wait-key"></i> idle</div></div>
+            <div class="timeline" id="timeline"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="weight-section section-pad" id="weights">
+        <div class="section-heading light-heading">
+          <div>
+            <p class="kicker">02 · THE STALE-WEIGHT MOMENT</p>
+            <h2>The gradient is old.<br />The destination is current.</h2>
+          </div>
+          <p>“Stale” does not mean PipeDream rewinds the model. It means the gradient was evaluated at an older point in parameter space.</p>
+        </div>
+
+        <div class="stash-toggle" role="group" aria-label="Weight behavior comparison">
+          <button class="active" data-mode="stash" type="button"><span>✓</span> WEIGHT STASHING</button>
+          <button data-mode="naive" type="button"><span>×</span> NAIVE PIPELINE</button>
+        </div>
+
+        <div class="weight-story" id="weight-story">
+          <article class="story-step first">
+            <div class="step-no">01</div>
+            <p class="story-label">FORWARD · m3</p>
+            <h3>Read the live weight.</h3>
+            <div class="weight-object live-weight"><span>LIVE</span><strong>W<sup>0</sup></strong><small>v0</small></div>
+            <div class="copy-motion"><span></span><b>COPY</b><span></span></div>
+            <div class="weight-object stash-weight"><span>STASH FOR m3</span><strong>W<sup>0</sup></strong><small>frozen</small></div>
+            <p>m3’s activations are created with W⁰. PipeDream holds this exact version until m3 comes back.</p>
+          </article>
+
+          <article class="story-step middle">
+            <div class="step-no">02</div>
+            <p class="story-label">WHILE m3 IS DOWNSTREAM</p>
+            <h3>Other updates land.</h3>
+            <div class="version-ladder">
+              <div><span>W⁰</span><b>− ηg₁</b></div>
+              <div><span>W¹</span><b>− ηg₂</b></div>
+              <div class="current"><span>W²</span><b>CURRENT</b></div>
+            </div>
+            <p>m1 and m2 finish backward first. Their gradients advance the live parameter twice.</p>
+          </article>
+
+          <article class="story-step last">
+            <div class="step-no">03</div>
+            <p class="story-label">BACKWARD · m3</p>
+            <h3 id="backward-title">Compute with the stash.</h3>
+            <div class="gradient-token"><span>CONTEXT</span><b id="context-weight">W⁰</b><i>→</i><strong>g₃(W⁰)</strong></div>
+            <div class="apply-arrow">APPLY TO CURRENT ↓</div>
+            <div class="equation-card" id="equation-card"><span>new live weight</span><strong>W³ = W² − η · g₃(W⁰)</strong></div>
+            <p id="backward-explanation">The derivative is internally consistent with m3’s forward pass, even though it is stale relative to W².</p>
+          </article>
+        </div>
+
+        <aside class="answer-callout">
+          <span class="answer-index">THE SHORT ANSWER</span>
+          <p id="answer-copy"><b>W⁰ answers “how was this gradient computed?”</b> W² answers “where should we apply it now?” Stashed weights are read-only context—not an update target.</p>
+        </aside>
+      </section>
+
+      <section class="parallel-section section-pad" id="parallel">
+        <div class="section-heading light-heading">
+          <div>
+            <p class="kicker">03 · DATA PARALLEL INSIDE THE PIPELINE</p>
+            <h2>Replicas split traffic,<br />then share progress.</h2>
+          </div>
+          <p>A stage may be too slow for one GPU. PipeDream can replicate that stage without replicating the entire model.</p>
+        </div>
+
+        <div class="parallel-grid">
+          <div class="routing-demo">
+            <div class="route-column incoming">
+              <span>FROM STAGE 1</span>
+              <div class="mini m1">m1</div><div class="mini m2">m2</div><div class="mini m3">m3</div><div class="mini m4">m4</div>
+            </div>
+            <svg viewBox="0 0 320 320" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M20 55 C150 55 160 70 295 70"/><path d="M20 125 C150 125 160 245 295 245"/><path d="M20 195 C150 195 160 70 295 70"/><path d="M20 265 C150 265 160 245 295 245"/>
+            </svg>
+            <div class="replica-stack">
+              <div class="replica-box"><span>GPU 1 · REPLICA A</span><b>m1 · m3</b><small>odd IDs</small></div>
+              <div class="replica-box"><span>GPU 2 · REPLICA B</span><b>m2 · m4</b><small>even IDs</small></div>
+            </div>
+          </div>
+
+          <div class="rules-list">
+            <article><span>1</span><div><h3>Route deterministically</h3><p><code>microbatch ID mod replica count</code> picks the replica. No coordinator is needed for every handoff.</p></div></article>
+            <article><span>2</span><div><h3>Return to the same GPU</h3><p>A microbatch’s backward pass returns to the replica that ran its forward pass—and still has its activations and stashed weight.</p></div></article>
+            <article><span>3</span><div><h3>Synchronize only that stage</h3><p>Replica gradients go through a parameter server; fresh stage weights flow back. Pipeline neighbors exchange activations and input-gradients, not the whole model.</p></div></article>
+          </div>
+        </div>
+
+        <div class="mental-model">
+          <p>Keep these three objects separate</p>
+          <div><span class="number">01</span><b>Activation</b><small>moves →<br />belongs to one microbatch</small></div>
+          <div><span class="number">02</span><b>Gradient</b><small>moves ←<br />computed with a stash</small></div>
+          <div><span class="number">03</span><b>Live weight</b><small>stays on its stage<br />receives every update</small></div>
+        </div>
+      </section>
+
+      <section class="takeaway section-pad">
+        <p class="kicker">04 · TAKEAWAY</p>
+        <blockquote>Consistent<br />doesn’t mean<br /><em>current.</em></blockquote>
+        <div class="takeaway-copy">
+          <p>Weight stashing makes each microbatch’s forward and backward math consistent. It does <b>not</b> remove delay between gradient computation and application.</p>
+          <p class="fine-print">This explainer models the original 2018 PipeDream paper’s default semantics: 1F1B scheduling and weight stashing, without optional vertical synchronization.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <a class="brand footer-brand" href="#top"><span class="brand-mark"><i></i><i></i><i></i></span><span>PIPE<span>DREAM</span></span></a>
+      <p>Interactive companion to <a href="1806.03377v1.pdf" target="_blank" rel="noreferrer">Harlap et al., 2018 ↗</a></p>
+      <a href="#top">BACK TO TOP ↑</a>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Parallel Sampling — Copy-on-Write</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#0891b2;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{position:relative;width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);background:#fff;border-radius:16px;box-shadow:0 4px 32px #1a1d3e1a;display:flex;overflow:hidden}
+
+/* SVG arrow overlay */
+#arrow-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;overflow:visible}
+
+/* ── Left panel (A1) ── */
+#left-panel{width:200px;flex-shrink:0;padding:14px 12px;display:flex;flex-direction:column;align-items:center;gap:12px;border-right:1px solid #e8eaf6;z-index:1;background:#fff}
+
+/* ── Center panel ── */
+#center-panel{flex:1;padding:12px 14px;display:flex;flex-direction:column;min-width:0;background:#fff}
+
+/* ── Right panel (A2) ── */
+#right-panel{width:200px;flex-shrink:0;padding:14px 12px;display:flex;flex-direction:column;align-items:center;gap:12px;border-left:1px solid #e8eaf6;z-index:1;background:#fff}
+
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;align-self:flex-start;flex-shrink:0}
+
+/* Sample circle */
+.sample-circle{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border:2.5px solid;flex-shrink:0;opacity:0;transform:scale(0.6);transition:opacity 350ms ease,transform 350ms cubic-bezier(.34,1.56,.64,1)}
+.sample-circle.show{opacity:1;transform:scale(1)}
+.a1-circle{background:#fffde7;border-color:#f59e0b;color:#92400e}
+.a2-circle{background:#f0fdf4;border-color:#4ade80;color:#15803d}
+
+/* Logical block table */
+.lb-wrap{width:100%;opacity:0;transition:opacity 400ms ease}
+.lb-wrap.show{opacity:1}
+.lb-caption{font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.lb-tbl{width:100%;border-collapse:collapse;border:1.5px solid #e2e8f0;border-radius:6px;overflow:hidden}
+.lb-tbl th{font-size:8px;font-weight:700;color:#94a3b8;padding:3px 6px;background:#f8fafc;border-bottom:1.5px solid #e2e8f0;text-align:left}
+.lb-tbl td{font-size:9px;padding:5px 6px;border-bottom:1px solid #f0f2fa;vertical-align:middle}
+.lb-tbl tr:last-child td{border-bottom:none}
+.lb-num{font-weight:700;color:#64748b;white-space:nowrap}
+.lb-arr{color:#c0c8e8;text-align:center}
+.lb-pb{font-weight:800;padding:2px 7px;border-radius:4px;font-size:9px;display:inline-block}
+.lb-pb.blue{background:#dbeeff;color:#1565c0;border:1px solid #90caf9}
+.lb-pb.amber{background:#fffde7;color:#92400e;border:1px solid #f59e0b}
+.lb-pb.green{background:#dcfce7;color:#15803d;border:1px solid #4ade80}
+
+/* Physical block grid */
+#phys-blocks{display:flex;flex-direction:column;flex:1;justify-content:space-evenly;gap:1px}
+.phys-row{display:flex;align-items:center;gap:6px;min-height:0;flex:1}
+.phys-lbl{font-size:8.5px;font-weight:700;color:#94a3b8;width:46px;flex-shrink:0;text-align:right}
+.phys-cells{display:flex;gap:3px;flex:1;height:100%;align-items:center}
+.tok-cell{flex:1;height:28px;border-radius:4px;border:1.5px solid #e8eaf6;background:#fafbff;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;font-style:italic;color:transparent;transition:background 350ms ease,border-color 350ms ease,color 300ms ease}
+.tok-cell.shared{background:#dbeeff;border-color:#90caf9;color:#1565c0}
+.tok-cell.a1{background:#fffde7;border-color:#f59e0b;color:#92400e}
+.tok-cell.a2{background:#dcfce7;border-color:#4ade80;color:#15803d}
+.tok-cell.pop{animation:cellPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes cellPop{0%{transform:scale(0.4);opacity:0}100%{transform:scale(1);opacity:1}}
+
+/* Ref count badge — sits inline after phys-cells */
+.ref-col{width:120px;flex-shrink:0;display:flex;align-items:center}
+.ref-badge{font-size:8px;font-weight:700;padding:2px 8px;border-radius:5px;background:#fce4ec;color:#c62828;border:1.5px solid #ef9a9a;white-space:nowrap;opacity:0;transition:opacity 300ms ease,background 400ms ease}
+.ref-badge.show{opacity:1}
+
+/* CoW label and arrow */
+#cow-label{position:absolute;font-size:11px;font-weight:800;font-style:italic;color:#d32f2f;opacity:0;transition:opacity 400ms ease;z-index:20;pointer-events:none;white-space:nowrap}
+#cow-label.show{opacity:1}
+
+/* Insight box */
+#insight-box{margin-top:8px;flex-shrink:0;border-radius:8px;background:#ecfeff;border:1.5px solid #a5f3fc;padding:9px 12px;font-size:.82rem;line-height:1.55;color:#0e7490;opacity:0;transition:opacity 400ms ease}
+#insight-box.show{opacity:1}
+
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;border-radius:10px;border-left:4px solid #0891b2;box-shadow:0 2px 10px #1a1d3e0d;font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#0891b2;color:#fff}
+#btn-next:hover:not(:disabled){background:#0e7490}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#0891b2;color:#fff}
+#btn-play:hover:not(:disabled){background:#0e7490}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#0891b2;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Parallel Sampling — Copy-on-Write</h1>
+  </div>
+  <span id="step-pill">Step 1 / 6</span>
+</div>
+
+<div id="stage">
+  <svg id="arrow-svg"></svg>
+
+  <!-- Left: Sample A1 -->
+  <div id="left-panel">
+    <div class="panel-label">Sample A1</div>
+    <div class="sample-circle a1-circle" id="circle-a1">A1</div>
+    <div class="lb-wrap" id="lb-a1">
+      <div class="lb-caption">Logical KV blocks</div>
+      <table class="lb-tbl">
+        <thead><tr><th>Block</th><th></th><th>Physical</th></tr></thead>
+        <tbody>
+          <tr id="a1-lb0"><td class="lb-num">Block 0</td><td class="lb-arr">→</td><td><span class="lb-pb blue" id="a1-lb0-pb">P7</span></td></tr>
+          <tr id="a1-lb1"><td class="lb-num">Block 1</td><td class="lb-arr">→</td><td><span class="lb-pb blue" id="a1-lb1-pb">P1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Center: Physical KV blocks -->
+  <div id="center-panel">
+    <div class="panel-label" style="margin-bottom:6px">Physical KV Blocks</div>
+    <div id="phys-blocks"></div>
+    <div id="cow-label">Copy-on-write</div>
+    <div id="insight-box"></div>
+  </div>
+
+  <!-- Right: Sample A2 -->
+  <div id="right-panel">
+    <div class="panel-label">Sample A2</div>
+    <div class="sample-circle a2-circle" id="circle-a2">A2</div>
+    <div class="lb-wrap" id="lb-a2">
+      <div class="lb-caption">Logical KV blocks</div>
+      <table class="lb-tbl">
+        <thead><tr><th>Block</th><th></th><th>Physical</th></tr></thead>
+        <tbody>
+          <tr id="a2-lb0"><td class="lb-num">Block 0</td><td class="lb-arr">→</td><td><span class="lb-pb blue" id="a2-lb0-pb">P7</span></td></tr>
+          <tr id="a2-lb1"><td class="lb-num">Block 1</td><td class="lb-arr">→</td><td><span class="lb-pb green" id="a2-lb1-pb">P1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const raf2  = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+// ── Data ──────────────────────────────────────────────────────────────────
+const N_PHYS   = 9;
+const PROMPT_A = ['Four','score','and','seven'];   // Block 7
+const PROMPT_B = ['years','ago','our'];             // Block 1 slots 0-2 (shared prefix)
+const TOK_A1   = 'fathers';                        // A1 diverges here
+const TOK_A2   = 'mothers';                        // A2 diverges here
+
+// ── Build physical block rows ─────────────────────────────────────────────
+const physBlocks = document.getElementById('phys-blocks');
+for (let i = 0; i < N_PHYS; i++) {
+  const row = document.createElement('div');
+  row.className = 'phys-row';
+  row.id = `pr${i}`;
+  row.innerHTML = `
+    <div class="phys-lbl">Block ${i}</div>
+    <div class="phys-cells" id="pc${i}">${
+      [0,1,2,3].map(s => `<div class="tok-cell" id="tc${i}_${s}"></div>`).join('')
+    }</div>
+    <div class="ref-col"><div class="ref-badge" id="ref${i}"></div></div>`;
+  physBlocks.appendChild(row);
+}
+
+// ── Cell helpers ──────────────────────────────────────────────────────────
+const cell = (b, s) => document.getElementById(`tc${b}_${s}`);
+
+function setCellInstant(b, s, text, cls) {
+  const c = cell(b, s);
+  c.textContent = text;
+  c.className = `tok-cell ${cls}`;
+}
+async function fillCell(b, s, text, cls) {
+  const c = cell(b, s);
+  c.textContent = text;
+  c.className = `tok-cell ${cls} pop`;
+  c.addEventListener('animationend', () => c.classList.remove('pop'), {once:true});
+}
+function setRef(b, text, vis) {
+  const el = document.getElementById(`ref${b}`);
+  el.textContent = text;
+  el.classList.toggle('show', vis);
+}
+
+// ── SVG arrows ────────────────────────────────────────────────────────────
+const svg   = document.getElementById('arrow-svg');
+const stage = document.getElementById('stage');
+
+function initDefs() {
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  for (const [id, fill] of [['aBlue','#1565c0'],['aAmber','#92400e'],['aGreen','#15803d'],['aRed','#d32f2f'],['aGray','#94a3b8']]) {
+    const m = document.createElementNS('http://www.w3.org/2000/svg','marker');
+    m.setAttribute('id', id); m.setAttribute('markerWidth','8'); m.setAttribute('markerHeight','8');
+    m.setAttribute('refX','6'); m.setAttribute('refY','3'); m.setAttribute('orient','auto');
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d','M0,0 L0,6 L8,3 z'); p.setAttribute('fill', fill);
+    m.appendChild(p); defs.appendChild(m);
+  }
+  svg.appendChild(defs);
+}
+
+function pt(el) {
+  const r  = el.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  return {
+    cx: r.left - sr.left + r.width/2,
+    cy: r.top  - sr.top  + r.height/2,
+    right:  r.right  - sr.left,
+    left:   r.left   - sr.left,
+    top:    r.top    - sr.top,
+    bottom: r.bottom - sr.top,
+  };
+}
+
+function line(x1,y1,x2,y2,stroke,dash,markerId) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg','line');
+  el.setAttribute('x1',x1); el.setAttribute('y1',y1);
+  el.setAttribute('x2',x2); el.setAttribute('y2',y2);
+  el.setAttribute('stroke', stroke); el.setAttribute('stroke-width','1.5');
+  if (dash) el.setAttribute('stroke-dasharray','5,3');
+  if (markerId) el.setAttribute('marker-end', `url(#${markerId})`);
+  svg.appendChild(el);
+}
+
+function curve(x1,y1,x2,y2,bend,stroke,markerId) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg','path');
+  const cx = (x1+x2)/2 + bend;
+  el.setAttribute('d', `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`);
+  el.setAttribute('stroke', stroke); el.setAttribute('stroke-width','2.5');
+  el.setAttribute('fill','none');
+  if (markerId) el.setAttribute('marker-end', `url(#${markerId})`);
+  svg.appendChild(el);
+}
+
+function clearArrows() {
+  svg.querySelectorAll('line,path:not(defs path)').forEach(e => e.remove());
+}
+
+function drawArrows(state) {
+  // state: 'shared' | 'cow'
+  clearArrows();
+  const a1lb0 = pt(document.getElementById('a1-lb0'));
+  const a1lb1 = pt(document.getElementById('a1-lb1'));
+  const a2lb0 = pt(document.getElementById('a2-lb0'));
+  const a2lb1 = pt(document.getElementById('a2-lb1'));
+  const p1    = pt(document.getElementById('pr1'));
+  const p3    = pt(document.getElementById('pr3'));
+  const p7    = pt(document.getElementById('pr7'));
+  const pc1   = pt(document.getElementById('pc1'));
+  const pc3   = pt(document.getElementById('pc3'));
+
+  // A1 LB0 → P7  (left→right, blue dashed)
+  line(a1lb0.right, a1lb0.cy, p7.left, p7.cy, '#1565c0', true, 'aBlue');
+  // A2 LB0 → P7  (right→left, blue dashed)
+  line(a2lb0.left, a2lb0.cy, p7.right, p7.cy, '#1565c0', true, 'aBlue');
+
+  if (state === 'shared') {
+    // Both point to P1
+    line(a1lb1.right, a1lb1.cy, p1.left, p1.cy, '#94a3b8', true, 'aGray');
+    line(a2lb1.left,  a2lb1.cy, p1.right, p1.cy, '#94a3b8', true, 'aGray');
+  } else {
+    // After CoW: A1→P3, A2→P1
+    line(a1lb1.right, a1lb1.cy, p3.left, p3.cy, '#92400e', true, 'aAmber');
+    line(a2lb1.left,  a2lb1.cy, p1.right, p1.cy, '#15803d', true, 'aGreen');
+    // CoW curved arrow: P1 → P3 (left side of cells, curving right)
+    const ax = pc1.left - 18;
+    curve(ax, p1.cy, ax, p3.cy, 45, '#d32f2f', 'aRed');
+    // Position cow-label
+    const lbl = document.getElementById('cow-label');
+    lbl.style.left = (ax + 55) + 'px';
+    lbl.style.top  = ((p1.cy + p3.cy)/2 - 9) + 'px';
+    lbl.classList.add('show');
+  }
+}
+
+// ── Reset / instant ───────────────────────────────────────────────────────
+function resetAll() {
+  for (let b = 0; b < N_PHYS; b++) {
+    for (let s = 0; s < 4; s++) { const c = cell(b,s); c.textContent=''; c.className='tok-cell'; }
+    setRef(b,'',false);
+  }
+  ['circle-a1','circle-a2'].forEach(id => document.getElementById(id).classList.remove('show'));
+  ['lb-a1','lb-a2'].forEach(id => document.getElementById(id).classList.remove('show'));
+  const pb = document.getElementById('a1-lb1-pb');
+  pb.textContent='P1'; pb.className='lb-pb blue';
+  clearArrows();
+  document.getElementById('cow-label').classList.remove('show');
+  document.getElementById('insight-box').classList.remove('show');
+}
+
+function applyInstant(n) {
+  if (n >= 1) {
+    PROMPT_A.forEach((t,s) => setCellInstant(7, s, t, 'shared'));
+  }
+  if (n >= 2) {
+    PROMPT_B.forEach((t,s) => setCellInstant(1, s, t, 'shared'));
+    setRef(1,'Ref count: 2', true);
+    ['circle-a1','circle-a2','lb-a1','lb-a2'].forEach(id =>
+      document.getElementById(id).classList.add('show'));
+    const pb = document.getElementById('a1-lb1-pb');
+    pb.textContent='P1'; pb.className='lb-pb blue';
+    setTimeout(() => drawArrows('shared'), 50);
+  }
+  if (n >= 3) {
+    // CoW done
+    PROMPT_B.forEach((t,s) => setCellInstant(3, s, t, 'shared'));
+    setCellInstant(3, 3, TOK_A1, 'a1');
+    setCellInstant(1, 3, TOK_A2, 'a2');
+    setRef(1,'Ref count: 1', true);
+    const pb = document.getElementById('a1-lb1-pb');
+    pb.textContent='P3'; pb.className='lb-pb amber';
+    setTimeout(() => drawArrows('cow'), 50);
+  }
+  if (n >= 4) {
+    document.getElementById('insight-box').textContent =
+      'Copy cost = 1 block (only the diverging block is duplicated). Block 7 remains shared with ref count 2. Savings scale: for a 2 000-token prompt in 8 blocks with N = 10 samples, CoW reduces prompt KV storage 10×.';
+    document.getElementById('insight-box').classList.add('show');
+  }
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Parallel sampling generates N completions from the same prompt — used for best-of-N, self-consistency, or diverse outputs. Since all samples share an identical prompt, vLLM shares those KV blocks using reference counting and only duplicates blocks when outputs diverge (copy-on-write).',
+    async run() {}
+  },
+  {
+    desc: 'Prefill: the prompt "Four score and seven" is processed and its KV pairs are written into Physical Block 7. This block will be referenced by every sample — never written to again.',
+    async run() {
+      for (let s = 0; s < 4; s++) {
+        await fillCell(7, s, PROMPT_A[s], 'shared');
+        await sleep(160);
+      }
+    }
+  },
+  {
+    desc: 'The prompt continues with "years ago our", filling slots 0–2 of Physical Block 1 (the 4th slot is not yet written). Both Sample A1 and A2 are forked — each maps Logical Block 0 → P7 and Logical Block 1 → P1. Block 1 now has ref count = 2. No data is copied.',
+    async run() {
+      for (let s = 0; s < 3; s++) {
+        await fillCell(1, s, PROMPT_B[s], 'shared');
+        await sleep(160);
+      }
+      await sleep(250);
+      setRef(1,'Ref count: 2', true);
+      document.getElementById('circle-a1').classList.add('show');
+      await sleep(150);
+      document.getElementById('circle-a2').classList.add('show');
+      await sleep(200);
+      document.getElementById('lb-a1').classList.add('show');
+      document.getElementById('lb-a2').classList.add('show');
+      await raf2();
+      drawArrows('shared');
+    }
+  },
+  {
+    desc: 'A1 generates "fathers" and needs to write it to Block 1\'s 4th slot — but Block 1 is shared (ref count = 2). Writing directly would corrupt A2\'s data. Copy-on-write: Block 1\'s contents are copied to a new Physical Block 3, "fathers" is written into slot 3, and A1\'s logical pointer is redirected to P3. Block 1\'s ref count drops to 1.',
+    async run() {
+      // Copy shared prefix P1→P3
+      for (let s = 0; s < 3; s++) {
+        await fillCell(3, s, PROMPT_B[s], 'shared');
+        await sleep(150);
+      }
+      // Write A1's unique token to P3
+      await fillCell(3, 3, TOK_A1, 'a1');
+      await sleep(200);
+      // Redirect A1 LB1 → P3
+      const pb = document.getElementById('a1-lb1-pb');
+      pb.textContent = 'P3'; pb.className = 'lb-pb amber';
+      // A2 writes "mothers" to P1 slot 3 (now safe — ref count will be 1)
+      await sleep(150);
+      await fillCell(1, 3, TOK_A2, 'a2');
+      await sleep(200);
+      setRef(1,'Ref count: 2 → 1', true);
+      await sleep(600);
+      setRef(1,'Ref count: 1', true);
+      await raf2();
+      drawArrows('cow');
+    }
+  },
+  {
+    desc: 'Final state matches the paper figure. A1: LB0→P7, LB1→P3 ("fathers"). A2: LB0→P7, LB1→P1 ("mothers"). Physical Block 7 is still shared (ref count = 2). Only one block was duplicated — the one where outputs actually diverged.',
+    async run() {
+      const box = document.getElementById('insight-box');
+      box.textContent = 'Copy cost = 1 block (only the diverging block is duplicated). Block 7 remains shared with ref count 2. Savings scale: for a 2 000-token prompt in 8 blocks with N = 10 samples, CoW reduces prompt KV storage 10×.';
+      box.classList.add('show');
+    }
+  },
+];
+
+// ── Navigation ────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else { if (n - cur > 1) { resetAll(); applyInstant(n - 1); } await STEPS[n].run(); }
+  cur = n; busy = false; updateUI();
+}
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length - 1 && playActive) { await goTo(cur + 1); await sleep(1000); }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#0891b2'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) {
+  ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id =>
+    document.getElementById(id).disabled = !en);
+}
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+initDefs();
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); goTo(cur-1); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); goTo(cur+1); });
+document.getElementById('btn-play').addEventListener('click', playAll);
+document.getElementById('btn-reset').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key===' ') { e.preventDefault(); stopPlay(); goTo(cur+1); }
+  if (e.key==='ArrowLeft') { e.preventDefault(); stopPlay(); goTo(cur-1); }
+});
+updateUI();
+</script>
+</body>
+</html>
