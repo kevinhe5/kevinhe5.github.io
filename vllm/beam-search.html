@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Beam Search — vLLM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#7c3aed;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;overflow:hidden;
+}
+
+/* Left: beam cards */
+#left-panel{
+  width:300px;flex-shrink:0;padding:14px 12px;
+  display:flex;flex-direction:column;gap:8px;
+  border-right:1px solid #e8eaf6;
+}
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
+
+.beam-card{
+  border-radius:8px;border:1.5px solid transparent;
+  padding:9px 11px;
+  opacity:0;transform:translateX(-12px);
+  transition:opacity 320ms ease,transform 320ms ease,background 400ms ease,border-color 300ms ease;
+  flex-shrink:0;
+}
+.beam-card.show{opacity:1;transform:translateX(0)}
+.beam-card.pruned{opacity:.45;border-style:dashed}
+.beam-card.winner{box-shadow:0 0 0 3px #7c3aed66;animation:winnerGlow 600ms ease-out}
+@keyframes winnerGlow{0%{box-shadow:0 0 0 0 #7c3aed88}100%{box-shadow:0 0 0 3px #7c3aed66}}
+
+.beam-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.beam-label{font-size:11px;font-weight:700}
+.beam-rank{font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#f0f0f0;color:#888}
+.beam-rank.r1{background:#ede9fe;color:#7c3aed}
+.beam-rank.r2{background:#e0e7ff;color:#3730a3}
+
+.score-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.score-label{font-size:9px;color:#aaa;font-weight:600}
+.score-val{font-size:13px;font-weight:800;transition:color 400ms ease}
+.score-bar-wrap{flex:1;height:6px;background:#e8eaf6;border-radius:3px;overflow:hidden}
+.score-bar{height:100%;border-radius:3px;width:0%;transition:width 500ms ease,background 400ms ease}
+
+.token-row{display:flex;flex-wrap:wrap;gap:3px;min-height:20px}
+.tok{
+  font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
+  opacity:0;transform:scale(0.5);
+  transition:opacity 200ms ease,transform 200ms cubic-bezier(.34,1.56,.64,1);
+}
+.tok.show{opacity:1;transform:scale(1)}
+.tok.shared{background:#ede9fe;color:#7c3aed}
+.tok.new-shared{background:#ede9fe;color:#7c3aed}
+.beam-status{font-size:9px;font-weight:700;padding:1px 8px;border-radius:8px;display:inline-block;margin-top:4px}
+.st-active{background:#ede9fe;color:#7c3aed}
+.st-pruned{background:#fee2e2;color:#dc2626}
+.st-winner{background:#dcfce7;color:#16a34a}
+
+/* Right panel */
+#right-panel{flex:1;padding:16px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+
+#shared-zone{
+  border-radius:10px;border:2px dashed #c0c8e8;background:#f5f7ff;
+  padding:10px 12px;flex-shrink:0;
+  transition:border-color 400ms ease,background 400ms ease,box-shadow 400ms ease;
+}
+#shared-zone.active{border-color:#7c3aed;background:#faf5ff;box-shadow:0 0 0 4px #7c3aed20}
+.zone-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.zone-title{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px}
+#ref-badge{
+  font-size:10px;font-weight:700;color:#fff;background:#7c3aed;
+  padding:2px 10px;border-radius:10px;
+  opacity:0;transition:opacity 300ms ease;
+}
+#ref-badge.show{opacity:1}
+#shared-blocks{display:flex;gap:8px;flex-wrap:wrap}
+
+.pb{
+  border-radius:7px;border:1.5px solid #d4d8f0;background:#f5f6fc;
+  padding:7px 8px;display:flex;flex-direction:column;gap:4px;
+  transition:background 350ms ease,border-color 350ms ease,opacity 400ms ease;
+  min-width:96px;
+}
+.pb.pulse{animation:blkPulse 500ms ease-out}
+@keyframes blkPulse{0%{transform:scale(1)}45%{transform:scale(1.06)}100%{transform:scale(1)}}
+.pb.freed{opacity:.3}
+.pb.shared-blk{background:#ede9fe;border-color:#7c3aed}
+.pb.b1{background:#dbeeff;border-color:#1e88e5}
+.pb.b2{background:#e8f5e9;border-color:#43a047}
+.pb.b3{background:#fff3e0;border-color:#f57c00}
+
+.pb-head{display:flex;justify-content:space-between;align-items:center}
+.pb-id{font-size:8px;font-weight:700;color:#bbb}
+.pb.shared-blk .pb-id{color:#7c3aed}
+.pb.b1 .pb-id{color:#1e88e5}.pb.b2 .pb-id{color:#43a047}.pb.b3 .pb-id{color:#f57c00}
+.pb-owner{font-size:7px;font-weight:600;color:#ccc}
+.pb.shared-blk .pb-owner{color:#7c3aed}
+.pb.b1 .pb-owner{color:#1565c0}.pb.b2 .pb-owner{color:#1b5e20}.pb.b3 .pb-owner{color:#e65100}
+
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;flex:1}
+.kv-slot{border-radius:3px;background:#e4e8f4;min-height:16px;transition:background 200ms ease}
+.pb.shared-blk .kv-slot.filled{background:#7c3aed}
+.pb.b1 .kv-slot.filled{background:#1e88e5}
+.pb.b2 .kv-slot.filled{background:#43a047}
+.pb.b3 .kv-slot.filled{background:#f57c00}
+.kv-slot.pop{animation:slotPop 280ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+
+#private-zone{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0}
+#private-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;flex:1;align-content:start}
+
+#summary-box{
+  border-radius:8px;background:#faf5ff;border:1.5px solid #ddd6fe;
+  padding:9px 12px;flex-shrink:0;font-size:.82rem;color:#5b21b6;line-height:1.55;
+  opacity:0;transition:opacity 400ms ease;
+}
+#summary-box.show{opacity:1}
+
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #7c3aed;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#7c3aed;color:#fff}
+#btn-next:hover:not(:disabled){background:#6d28d9}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#7c3aed;color:#fff}
+#btn-play:hover:not(:disabled){background:#6d28d9}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#7c3aed;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Beam Search</h1>
+  </div>
+  <span id="step-pill">Step 1 / 9</span>
+</div>
+
+<div id="stage">
+  <div id="left-panel">
+    <div class="panel-label">Active beams (K = 3)</div>
+  </div>
+  <div id="right-panel">
+    <div id="shared-zone">
+      <div class="zone-header">
+        <span class="zone-title">Shared Prompt KV Blocks</span>
+        <span id="ref-badge">ref count: 3</span>
+      </div>
+      <div id="shared-blocks"></div>
+    </div>
+    <div id="private-zone">
+      <div class="panel-label">Private Decode Blocks — one per beam</div>
+      <div id="private-grid"></div>
+    </div>
+    <div id="summary-box"></div>
+  </div>
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const stage     = document.getElementById('stage');
+const leftPanel = document.getElementById('left-panel');
+
+const PROMPT = ['The','AI','will'];
+const BEAMS = [
+  { id:'b1', label:'Beam 1', color:'#1e88e5', bg:'#dbeeff',
+    rounds:[
+      { token:'quickly', score:-0.35 },
+      { token:'solve',   score:-0.30 },
+      { token:'every',   score:-0.25 },
+    ]
+  },
+  { id:'b2', label:'Beam 2', color:'#43a047', bg:'#e8f5e9',
+    rounds:[
+      { token:'efficiently', score:-0.55 },
+      { token:'handle',      score:-0.40 },
+      { token:'all',         score:-0.30 },
+    ]
+  },
+  { id:'b3', label:'Beam 3', color:'#f57c00', bg:'#fff3e0',
+    rounds:[
+      { token:'slowly',    score:-0.90 },
+      { token:'struggle',  score:-0.70 },
+    ]
+  },
+];
+// P0 = shared prompt; P1=B1 private, P2=B2 private, P3=B3 private; P4-P7 free
+const N_TOTAL = 8;
+
+// ── Build beam cards ───────────────────────────────────────────────────────
+BEAMS.forEach(b => {
+  const card = document.createElement('div');
+  card.className = 'beam-card';
+  card.id = `card-${b.id}`;
+  card.style.cssText = `border-color:${b.color};background:${b.bg}33`;
+  card.innerHTML = `
+    <div class="beam-header">
+      <span class="beam-label" style="color:${b.color}">${b.label}</span>
+      <span class="beam-rank" id="rank-${b.id}">—</span>
+    </div>
+    <div class="score-row">
+      <span class="score-label">Cumulative log-prob:</span>
+      <span class="score-val" id="score-${b.id}" style="color:#bbb">—</span>
+      <div class="score-bar-wrap"><div class="score-bar" id="sbar-${b.id}" style="background:${b.color}"></div></div>
+    </div>
+    <div style="font-size:8px;color:#aaa;margin-bottom:2px">Sequence:</div>
+    <div class="token-row" id="trow-${b.id}"></div>
+    <span class="beam-status st-active" id="bstatus-${b.id}">Waiting</span>`;
+  leftPanel.appendChild(card);
+});
+
+// ── Build shared block P0 ──────────────────────────────────────────────────
+const sharedBlocksEl = document.getElementById('shared-blocks');
+const pb0 = document.createElement('div');
+pb0.className = 'pb shared-blk';
+pb0.id = 'pb0';
+pb0.innerHTML = `
+  <div class="pb-head">
+    <span class="pb-id">P0</span>
+    <span class="pb-owner" id="pbo0">prompt</span>
+  </div>
+  <div class="kv-grid">${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs0_${s}"></div>`).join('')}</div>`;
+sharedBlocksEl.appendChild(pb0);
+
+// ── Build private blocks P1-P7 ─────────────────────────────────────────────
+const privateGrid = document.getElementById('private-grid');
+for (let i=1;i<N_TOTAL;i++) {
+  const b = document.createElement('div');
+  b.className = 'pb'; b.id = `pb${i}`;
+  b.innerHTML = `
+    <div class="pb-head">
+      <span class="pb-id">P${i}</span>
+      <span class="pb-owner" id="pbo${i}"></span>
+    </div>
+    <div class="kv-grid">${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs${i}_${s}"></div>`).join('')}</div>`;
+  privateGrid.appendChild(b);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setBlock(pbId, cls, ownerLabel) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls);
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  for (let s=0;s<4;s++) document.getElementById(`pvs${pbId}_${s}`).classList.add('filled');
+}
+function clearBlock(pbId) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.className = 'pb';
+  document.getElementById(`pbo${pbId}`).textContent = '';
+  for (let s=0;s<4;s++) document.getElementById(`pvs${pbId}_${s}`).className='kv-slot';
+}
+async function fillBlock(pbId, cls, ownerLabel, delay=60) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls,'pulse');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  await sleep(120); b.classList.remove('pulse');
+  for (let s=0;s<4;s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.classList.add('filled','pop');
+    sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+    if (s<3) await sleep(delay);
+  }
+}
+async function partialFill(pbId, cls, ownerLabel, nSlots) {
+  const b = document.getElementById(`pb${pbId}`);
+  b.classList.add(cls,'pulse');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  await sleep(100); b.classList.remove('pulse');
+  for (let s=0;s<nSlots;s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.classList.add('filled','pop');
+    sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+    if (s<nSlots-1) await sleep(50);
+  }
+}
+
+function addToken(bid, text, isShared=false) {
+  const def = BEAMS.find(b=>b.id===bid);
+  const tok = document.createElement('span');
+  tok.className = 'tok' + (isShared?' shared':'');
+  if (!isShared) tok.style.cssText = `background:${def.bg};color:${def.color}`;
+  tok.textContent = text;
+  document.getElementById(`trow-${bid}`).appendChild(tok);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>tok.classList.add('show')));
+}
+
+function updateScore(bid, cumScore) {
+  const el = document.getElementById(`score-${bid}`);
+  const bar = document.getElementById(`sbar-${bid}`);
+  const pct = Math.max(0, (cumScore + 2) / 2 * 100); // map -2..0 → 0..100%
+  const color = cumScore > -0.7 ? '#16a34a' : cumScore > -1.3 ? '#f57c00' : '#dc2626';
+  el.textContent = cumScore.toFixed(2);
+  el.style.color = color;
+  bar.style.width = pct + '%';
+  bar.style.background = color;
+}
+
+function setRank(bid, rank) {
+  const el = document.getElementById(`rank-${bid}`);
+  el.textContent = rank ? `#${rank}` : '—';
+  el.className = 'beam-rank' + (rank===1?' r1':rank===2?' r2':'');
+}
+
+function setStatus(bid, cls, text) {
+  const el = document.getElementById(`bstatus-${bid}`);
+  el.className = `beam-status ${cls}`;
+  el.textContent = text;
+}
+
+function setRefBadge(n) {
+  const el = document.getElementById('ref-badge');
+  if (n>0) { el.textContent=`ref count: ${n}`; el.classList.add('show'); }
+  else el.classList.remove('show');
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  for (let i=0;i<N_TOTAL;i++) clearBlock(i);
+  document.getElementById('pb0').classList.add('shared-blk');
+  document.getElementById('pbo0').textContent='prompt';
+  document.getElementById('pbo0').style.color='#7c3aed';
+  document.querySelectorAll('.beam-card').forEach(c=>{
+    c.classList.remove('show','pruned','winner');
+  });
+  BEAMS.forEach(b=>{
+    document.getElementById(`trow-${b.id}`).innerHTML='';
+    document.getElementById(`score-${b.id}`).textContent='—';
+    document.getElementById(`score-${b.id}`).style.color='#bbb';
+    document.getElementById(`sbar-${b.id}`).style.width='0%';
+    document.getElementById(`rank-${b.id}`).textContent='—';
+    document.getElementById(`rank-${b.id}`).className='beam-rank';
+    setStatus(b.id,'st-active','Waiting');
+  });
+  setRefBadge(0);
+  document.getElementById('shared-zone').classList.remove('active');
+  const sb = document.getElementById('summary-box');
+  sb.classList.remove('show'); sb.textContent='';
+}
+
+function applyInstant(n) {
+  if (n<1) return;
+  // Step 1: prompt in P0
+  for (let s=0;s<4;s++) document.getElementById(`pvs0_${s}`).classList.add('filled');
+  if (n>=2) {
+    // Beams forked, P0 shared ref:3
+    document.getElementById('shared-zone').classList.add('active');
+    setRefBadge(3);
+    BEAMS.forEach(b=>{
+      document.getElementById(`card-${b.id}`).classList.add('show');
+      PROMPT.forEach(t=>addToken(b.id,t,true));
+      setStatus(b.id,'st-active','Active');
+    });
+  }
+  if (n>=3) {
+    // Round 1 tokens
+    let cumScores = [0,0,0];
+    BEAMS.forEach((b,i)=>{
+      addToken(b.id, b.rounds[0].token);
+      cumScores[i] += b.rounds[0].score;
+      updateScore(b.id, cumScores[i]);
+    });
+    setBlock(1,'b1','B1·LB0'); setBlock(2,'b2','B2·LB0'); setBlock(3,'b3','B3·LB0');
+    setRank('b1',1); setRank('b2',2); setRank('b3',3);
+  }
+  if (n>=4) {
+    // Round 2 tokens
+    let cum = [BEAMS[0].rounds[0].score, BEAMS[1].rounds[0].score, BEAMS[2].rounds[0].score];
+    BEAMS.forEach((b,i)=>{
+      addToken(b.id, b.rounds[1].token);
+      cum[i] += b.rounds[1].score;
+      updateScore(b.id, cum[i]);
+    });
+    for(let s=1;s<4;s++) document.getElementById(`pvs1_${s}`).classList.add('filled');
+    for(let s=1;s<4;s++) document.getElementById(`pvs2_${s}`).classList.add('filled');
+    for(let s=1;s<2;s++) document.getElementById(`pvs3_${s}`).classList.add('filled');
+    setRank('b1',1); setRank('b2',2); setRank('b3',3);
+  }
+  if (n>=5) {
+    // B3 pruned
+    clearBlock(3);
+    document.getElementById('card-b3').classList.add('pruned');
+    setStatus('b3','st-pruned','Pruned ✗');
+    setRank('b3',null);
+    setRefBadge(2);
+  }
+  if (n>=6) {
+    // Round 3 — B1 and B2 continue
+    let cum1 = BEAMS[0].rounds[0].score + BEAMS[0].rounds[1].score + BEAMS[0].rounds[2].score;
+    let cum2 = BEAMS[1].rounds[0].score + BEAMS[1].rounds[1].score + BEAMS[1].rounds[2].score;
+    addToken('b1', BEAMS[0].rounds[2].token);
+    addToken('b2', BEAMS[1].rounds[2].token);
+    updateScore('b1', cum1);
+    updateScore('b2', cum2);
+    for(let s=2;s<4;s++) document.getElementById(`pvs1_${s}`).classList.add('filled');
+    for(let s=2;s<4;s++) document.getElementById(`pvs2_${s}`).classList.add('filled');
+    setRank('b1',1); setRank('b2',2);
+  }
+  if (n>=7) {
+    // B1 wins
+    document.getElementById('card-b1').classList.add('winner');
+    setStatus('b1','st-winner','Selected ✓');
+    setStatus('b2','st-pruned','Eliminated');
+    document.getElementById('card-b2').classList.add('pruned');
+    clearBlock(2);
+    setRank('b1',1); setRank('b2',null);
+  }
+  if (n>=8) {
+    const sb = document.getElementById('summary-box');
+    sb.innerHTML = '<b>Beam search vs parallel sampling:</b> Both share the prompt block (ref = K). Beam search additionally can share decode-level blocks when beams produce identical token sequences — the shared prefix tree can extend deep into generation. Pruned beams release their references immediately, freeing both their private blocks and decrementing the shared block\'s ref count.';
+    sb.classList.add('show');
+  }
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Beam search maintains the K highest-probability partial sequences at each decoding step. Rather than committing to one output (greedy) or generating fully independent samples, it explores K paths simultaneously and prunes the lowest-scoring ones.',
+    async run() {}
+  },
+  {
+    desc: 'Prefill: the prompt ("The AI will") is processed and its KV entries are stored in physical block P0. This block will be shared across all K = 3 beams — identical to how parallel sampling shares the prompt.',
+    async run() { await fillBlock(0,'shared-blk','prompt',90); }
+  },
+  {
+    desc: 'K = 3 beams are forked from the prompt. Each beam card appears, inheriting the prompt tokens (shown in violet). Block P0 now has reference count = 3. No data is duplicated.',
+    async run() {
+      document.getElementById('shared-zone').classList.add('active');
+      for (const b of BEAMS) {
+        document.getElementById(`card-${b.id}`).classList.add('show');
+        PROMPT.forEach(t=>addToken(b.id,t,true));
+        setStatus(b.id,'st-active','Active');
+        await sleep(130);
+      }
+      setRefBadge(3);
+    }
+  },
+  {
+    desc: 'Round 1: each beam independently selects its highest-probability next token. They diverge immediately — Beam 1: "quickly" (−0.35), Beam 2: "efficiently" (−0.55), Beam 3: "slowly" (−0.90). Each gets its own private decode block.',
+    async run() {
+      const cum = [0,0,0];
+      for (let i=0;i<BEAMS.length;i++) {
+        addToken(BEAMS[i].id, BEAMS[i].rounds[0].token);
+        cum[i] += BEAMS[i].rounds[0].score;
+        updateScore(BEAMS[i].id, cum[i]);
+        const b = document.getElementById(`pb${i+1}`);
+        b.classList.add(BEAMS[i].id,'pulse');
+        document.getElementById(`pbo${i+1}`).textContent = `B${i+1}·LB0`;
+        await sleep(120); b.classList.remove('pulse');
+        const sl = document.getElementById(`pvs${i+1}_0`);
+        sl.classList.add('filled','pop');
+        sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+        await sleep(120);
+      }
+      setRank('b1',1); setRank('b2',2); setRank('b3',3);
+    }
+  },
+  {
+    desc: 'Round 2: beams continue. Scores are cumulative log-probabilities — lower (more negative) is worse. Beam 1: −0.65, Beam 2: −0.95, Beam 3: −1.60. All three still reference shared P0.',
+    async run() {
+      const cum = [
+        BEAMS[0].rounds[0].score,
+        BEAMS[1].rounds[0].score,
+        BEAMS[2].rounds[0].score,
+      ];
+      for (let i=0;i<BEAMS.length;i++) {
+        addToken(BEAMS[i].id, BEAMS[i].rounds[1].token);
+        cum[i] += BEAMS[i].rounds[1].score;
+        updateScore(BEAMS[i].id, cum[i]);
+        const sl = document.getElementById(`pvs${i+1}_1`);
+        sl.classList.add('filled','pop');
+        sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+        await sleep(150);
+      }
+      setRank('b1',1); setRank('b2',2); setRank('b3',3);
+    }
+  },
+  {
+    desc: 'Beam 3 is pruned — its cumulative score (−1.60) is far below the others. Its private block P3 is freed immediately. P0\'s reference count drops from 3 → 2. Only K = 2 beams survive.',
+    async run() {
+      document.getElementById('card-b3').classList.add('pruned');
+      setStatus('b3','st-pruned','Pruned ✗');
+      setRank('b3',null);
+      await sleep(200);
+      document.getElementById('pb3').classList.add('freed');
+      await sleep(400);
+      clearBlock(3);
+      setRefBadge(2);
+    }
+  },
+  {
+    desc: 'Round 3: Beams 1 and 2 continue with final scores Beam 1: −0.90, Beam 2: −1.25. Both still share the prompt block P0 (ref count = 2). Their private blocks accumulate further KV entries.',
+    async run() {
+      const cum = [
+        BEAMS[0].rounds[0].score + BEAMS[0].rounds[1].score,
+        BEAMS[1].rounds[0].score + BEAMS[1].rounds[1].score,
+      ];
+      for (let i=0;i<2;i++) {
+        addToken(BEAMS[i].id, BEAMS[i].rounds[2].token);
+        cum[i] += BEAMS[i].rounds[2].score;
+        updateScore(BEAMS[i].id, cum[i]);
+        for (let s=2;s<4;s++) {
+          const sl = document.getElementById(`pvs${i+1}_${s}`);
+          sl.classList.add('filled','pop');
+          sl.addEventListener('animationend',()=>sl.classList.remove('pop'),{once:true});
+        }
+        await sleep(200);
+      }
+      setRank('b1',1); setRank('b2',2);
+    }
+  },
+  {
+    desc: 'Beam 1 is selected as the final output — it has the highest cumulative log-probability (−0.90). Beam 2 is eliminated, P2 freed, P0\'s ref count drops to 1 (only Beam 1 remains). The winning sequence is returned.',
+    async run() {
+      document.getElementById('card-b1').classList.add('winner');
+      setStatus('b1','st-winner','Selected ✓');
+      document.getElementById('card-b2').classList.add('pruned');
+      setStatus('b2','st-pruned','Eliminated');
+      setRank('b2',null);
+      await sleep(200);
+      clearBlock(2);
+      setRefBadge(1);
+    }
+  },
+  {
+    desc: 'Summary: beam search and parallel sampling both share the prompt KV block, reducing memory in proportion to K (or N). The difference is that beam search can share decode-level blocks too when beams produce the same token sequence — sharing extends as a tree. Pruning releases references immediately, unlike static batching which would hold memory until the full batch ends.',
+    async run() {
+      const sb = document.getElementById('summary-box');
+      sb.innerHTML = '<b>Beam search vs parallel sampling:</b> Both share the prompt block (ref = K). Beam search can additionally share decode-level blocks when beams converge on the same token — prefix sharing extends as a tree. Pruned beams release their references immediately, freeing both their private blocks and decrementing shared block ref counts.';
+      sb.classList.add('show');
+    }
+  }
+];
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+let cur=0, busy=false, playActive=false;
+
+async function goTo(n) {
+  if (busy||n<0||n>=STEPS.length) return;
+  busy=true; setUI(false);
+  if (n<=cur) { resetAll(); applyInstant(n); }
+  else { if (n-cur>1) { resetAll(); applyInstant(n-1); } await STEPS[n].run(); }
+  cur=n; busy=false; updateUI();
+}
+async function playAll() {
+  if (busy) return;
+  playActive=true;
+  document.getElementById('btn-play').textContent='■ Stop';
+  document.getElementById('btn-play').style.background='#e53935';
+  document.getElementById('btn-play').onclick=stopPlay;
+  while (cur<STEPS.length-1&&playActive) { await goTo(cur+1); await sleep(900); }
+  endPlay();
+}
+function stopPlay(){playActive=false;endPlay();}
+function endPlay(){
+  playActive=false;
+  const btn=document.getElementById('btn-play');
+  btn.textContent='▶ Play All';btn.style.background='#7c3aed';btn.onclick=playAll;
+  updateUI();
+}
+function setUI(en){['btn-prev','btn-next','btn-play'].forEach(id=>document.getElementById(id).disabled=!en);}
+function updateUI(){
+  document.getElementById('step-pill').textContent=`Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent=STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled=cur===0;
+  document.getElementById('btn-next').disabled=cur===STEPS.length-1;
+  document.getElementById('btn-play').disabled=cur===STEPS.length-1;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+}
+STEPS.forEach((_,i)=>{
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.addEventListener('click',()=>{stopPlay();goTo(i);});
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{stopPlay();goTo(cur-1);});
+document.getElementById('btn-next').addEventListener('click',()=>{stopPlay();goTo(cur+1);});
+document.getElementById('btn-play').addEventListener('click',playAll);
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();goTo(0);});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if(e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>

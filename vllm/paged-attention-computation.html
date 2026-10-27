@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Paged Attention — Block-Wise Computation</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;
+  display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;
+  width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#0f766e;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;
+  padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;overflow:hidden;
+}
+
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:6px;flex-shrink:0}
+.divider-v{width:1px;background:#e8eaf6;flex-shrink:0}
+.divider-h{height:1px;background:#e8eaf6;flex-shrink:0;margin:7px 0}
+
+/* ── Left panel ────────────────────────────────────────────────────────────── */
+#left-panel{width:186px;flex-shrink:0;padding:15px 13px;display:flex;flex-direction:column;gap:0;overflow:hidden}
+
+#query-section{
+  display:flex;flex-direction:column;gap:5px;
+  opacity:0;transition:opacity 350ms ease;
+}
+#query-section.show{opacity:1}
+.q-label{font-size:9px;font-weight:800;color:#0f766e}
+#query-row{display:flex;gap:3px;flex-wrap:wrap}
+.q-cell{
+  width:26px;height:26px;border-radius:3px;background:#0f766e;
+  opacity:0;transform:scale(.4);
+  transition:opacity 200ms ease,transform 200ms ease;
+}
+.q-cell.show{opacity:1;transform:scale(1)}
+.q-dim{font-size:8px;color:#94a3b8;font-weight:600}
+
+#bt-section{display:flex;flex-direction:column;gap:5px;
+  opacity:0;transition:opacity 350ms ease}
+#bt-section.show{opacity:1}
+.bt-row{
+  display:flex;align-items:center;gap:5px;
+  opacity:0;transform:translateX(-6px);
+  transition:opacity 280ms ease,transform 280ms ease;
+}
+.bt-row.show{opacity:1;transform:translateX(0)}
+.bt-lb{font-size:8px;font-weight:700;color:#64748b;background:#f1f5f9;
+  border:1px solid #e2e8f0;border-radius:4px;padding:2px 5px;min-width:26px;text-align:center}
+.bt-arr{font-size:10px;color:#94a3b8}
+.bt-pb{font-size:8px;font-weight:800;padding:2px 5px;border-radius:4px;min-width:24px;text-align:center}
+.bt-pb.p0{background:#dbeeff;color:#1e88e5;border:1px solid #1e88e5}
+.bt-pb.p1{background:#e8f5e9;color:#43a047;border:1px solid #43a047}
+.bt-toks{font-size:7px;color:#94a3b8;font-weight:600}
+
+#formula-note{
+  margin-top:auto;font-size:8.5px;line-height:1.65;color:#475569;
+  background:#f8fafc;border-radius:8px;padding:9px 11px;border:1px solid #e2e8f0;
+  opacity:0;transition:opacity 400ms ease;flex-shrink:0;
+}
+#formula-note.show{opacity:1}
+
+/* ── Center panel: physical blocks ────────────────────────────────────────── */
+#center-panel{flex:1;padding:15px 12px;display:flex;flex-direction:column;gap:7px;min-width:0}
+
+.block-card{
+  border-radius:10px;border:2px solid #e2e8f0;background:#fafafa;
+  padding:9px 11px;
+  flex:1;display:flex;flex-direction:column;gap:5px;min-height:0;
+  opacity:0;transform:translateY(6px);
+  transition:opacity 350ms ease,transform 350ms ease,
+    border-color 350ms ease,background 350ms ease,box-shadow 350ms ease;
+}
+.block-card.show{opacity:1;transform:translateY(0)}
+.block-card.active-k{border-color:#f59e0b!important;background:#fffbeb!important;box-shadow:0 0 0 3px #fde68a55}
+.block-card.active-v{border-color:#8b5cf6!important;background:#faf5ff!important;box-shadow:0 0 0 3px #ddd6fe55}
+.block-card.done{border-color:#0f766e!important;background:#f0fdfa!important}
+
+.bc-header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.bc-title{font-size:9px;font-weight:800;color:#374151}
+.bc-badge{font-size:7px;font-weight:800;padding:1px 6px;border-radius:10px}
+.bc-badge.lb0{background:#dbeeff;color:#1e88e5;border:1px solid #1e88e5}
+.bc-badge.lb1{background:#e8f5e9;color:#43a047;border:1px solid #43a047}
+
+.kv-section{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.kv-lbl{font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+.kv-lbl.K{color:#b45309}
+.kv-lbl.V{color:#7c3aed}
+
+.tok-row{
+  display:flex;gap:3px;align-items:center;
+  opacity:0;transform:translateX(-4px);
+  transition:opacity 240ms ease,transform 240ms ease;
+}
+.tok-row.show{opacity:1;transform:translateX(0)}
+.tok-num{font-size:6.5px;font-weight:700;color:#94a3b8;width:14px;flex-shrink:0;text-align:right;margin-right:2px}
+.kv-cell{width:20px;height:20px;border-radius:3px;flex-shrink:0}
+
+/* ── Right panel: accumulator ──────────────────────────────────────────────── */
+#right-panel{width:220px;flex-shrink:0;padding:15px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+
+.rsec{display:flex;flex-direction:column;gap:4px;opacity:0;transition:opacity 350ms ease;flex-shrink:0}
+.rsec.show{opacity:1}
+.rsec-label{font-size:9px;font-weight:800}
+.rsec-label.K{color:#b45309}
+.rsec-label.V{color:#7c3aed}
+.rsec-label.out{color:#0f766e}
+
+.score-row{display:flex;gap:3px;flex-wrap:wrap;align-items:center}
+.score-sep{font-size:9px;color:#c0c8e8;padding:0 1px;line-height:1}
+
+.sc{
+  width:32px;height:32px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:7.5px;font-weight:700;
+  background:#e2e8f0;color:#94a3b8;border:1.5px solid #d1d5db;
+  opacity:0;transform:scale(.3);
+  transition:opacity 240ms ease,transform 240ms ease,
+    background 300ms ease,border-color 300ms ease,color 300ms ease;
+}
+.sc.show{opacity:1;transform:scale(1)}
+/* Score intensity — blue */
+.sc.s0{background:#dbeffe;color:#1e40af;border-color:#93c5fd}
+.sc.s1{background:#93c5fd;color:#1e40af;border-color:#3b82f6}
+.sc.s2{background:#3b82f6;color:#fff;border-color:#1d4ed8}
+.sc.s3{background:#1d4ed8;color:#fff;border-color:#1e3a8a}
+/* Weight intensity — purple */
+.sc.w0{background:#ede9fe;color:#6d28d9;border-color:#c4b5fd}
+.sc.w1{background:#c4b5fd;color:#5b21b6;border-color:#7c3aed}
+.sc.w2{background:#7c3aed;color:#fff;border-color:#5b21b6}
+.sc.w3{background:#5b21b6;color:#fff;border-color:#3b0764}
+
+.dim-note{font-size:7.5px;color:#94a3b8;font-weight:600}
+
+.rarrow{
+  display:flex;align-items:center;gap:5px;
+  opacity:0;transition:opacity 350ms ease;flex-shrink:0;
+}
+.rarrow.show{opacity:1}
+.rarrow-line{flex:1;height:1.5px;background:#e2e8f0}
+.rarrow-lbl{font-size:8px;font-weight:700;color:#64748b;white-space:nowrap}
+
+.out-cell{
+  width:28px;height:28px;border-radius:4px;
+  background:linear-gradient(135deg,#0f766ecc,#0891b2cc);
+  opacity:0;transform:scale(.3);
+  transition:opacity 220ms ease,transform 220ms ease;
+}
+.out-cell.show{opacity:1;transform:scale(1)}
+
+#insight-box{
+  margin-top:auto;font-size:8.5px;line-height:1.65;
+  color:#0f766e;background:#f0fdfa;border-radius:8px;
+  padding:9px 11px;border:1.5px solid #99f6e4;
+  opacity:0;transition:opacity 400ms ease;flex-shrink:0;
+}
+#insight-box.show{opacity:1}
+
+/* phase chips */
+.phase-chip{
+  font-size:7px;font-weight:800;padding:1px 6px;border-radius:8px;
+  opacity:0;transition:opacity 300ms ease;
+}
+.phase-chip.show{opacity:1}
+.phase-chip.k{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.phase-chip.v{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd}
+
+/* ── Controls ───────────────────────────────────────────────────────────────── */
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;
+  background:#fff;border-radius:10px;border-left:4px solid #0f766e;
+  box-shadow:0 2px 10px #1a1d3e0d;font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#0f766e;color:#fff}
+#btn-next:hover:not(:disabled){background:#115e59}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#0f766e;color:#fff}
+#btn-play:hover:not(:disabled){background:#115e59}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#0f766e;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Paged Attention — Block-Wise Computation</h1>
+  </div>
+  <span id="step-pill">Step 1 / 11</span>
+</div>
+
+<div id="stage">
+
+  <!-- Left: query + block table -->
+  <div id="left-panel">
+    <div class="panel-label">Query</div>
+    <div id="query-section">
+      <div class="q-label">q<sub>t</sub> &nbsp;(new token T9)</div>
+      <div id="query-row"></div>
+      <div class="q-dim">(1 × d<sub>k</sub>)</div>
+    </div>
+
+    <div class="divider-h" style="margin:10px 0"></div>
+
+    <div class="panel-label">Block Table</div>
+    <div id="bt-section">
+      <div class="bt-row" id="bt-row-0">
+        <div class="bt-lb">LB 0</div>
+        <div class="bt-arr">→</div>
+        <div class="bt-pb p0">P3</div>
+        <div class="bt-toks">T1–T4</div>
+      </div>
+      <div class="bt-row" id="bt-row-1">
+        <div class="bt-lb">LB 1</div>
+        <div class="bt-arr">→</div>
+        <div class="bt-pb p1">P7</div>
+        <div class="bt-toks">T5–T8</div>
+      </div>
+    </div>
+
+    <div id="formula-note">
+      <b>Paged attention loop:</b><br>
+      for each logical block b:<br>
+      &nbsp;&nbsp;s += q · K<sub>b</sub><sup>T</sup><br>
+      α = softmax(s / √d<sub>k</sub>)<br>
+      for each logical block b:<br>
+      &nbsp;&nbsp;o += α<sub>b</sub> · V<sub>b</sub>
+    </div>
+  </div>
+
+  <div class="divider-v"></div>
+
+  <!-- Center: physical blocks -->
+  <div id="center-panel">
+    <div class="panel-label">Physical Memory Blocks</div>
+
+    <!-- Block P3 (LB 0) -->
+    <div class="block-card" id="block-0">
+      <div class="bc-header">
+        <div class="bc-title">Physical Block P3</div>
+        <div class="bc-badge lb0">Logical Block 0</div>
+      </div>
+      <div class="kv-section" id="k-section-0">
+        <div class="kv-lbl K">K — Keys</div>
+      </div>
+      <div class="divider-h"></div>
+      <div class="kv-section" id="v-section-0">
+        <div class="kv-lbl V">V — Values</div>
+      </div>
+    </div>
+
+    <!-- Block P7 (LB 1) -->
+    <div class="block-card" id="block-1">
+      <div class="bc-header">
+        <div class="bc-title">Physical Block P7</div>
+        <div class="bc-badge lb1">Logical Block 1</div>
+      </div>
+      <div class="kv-section" id="k-section-1">
+        <div class="kv-lbl K">K — Keys</div>
+      </div>
+      <div class="divider-h"></div>
+      <div class="kv-section" id="v-section-1">
+        <div class="kv-lbl V">V — Values</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider-v"></div>
+
+  <!-- Right: score accumulator + output -->
+  <div id="right-panel">
+    <div class="panel-label">Computation</div>
+
+    <div class="rsec" id="scores-sec">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="rsec-label K">s = q · K<sup>T</sup></div>
+        <div class="phase-chip k" id="chip-k">K phase</div>
+      </div>
+      <div class="score-row" id="score-row"></div>
+      <div class="dim-note">(1 × 8) — one score per cached token</div>
+    </div>
+
+    <div class="rarrow" id="softmax-arrow">
+      <div class="rarrow-line"></div>
+      <div class="rarrow-lbl">softmax / √d<sub>k</sub></div>
+      <div class="rarrow-line"></div>
+    </div>
+
+    <div class="rsec" id="weights-sec">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="rsec-label V">α — attention weights</div>
+        <div class="phase-chip v" id="chip-v">V phase</div>
+      </div>
+      <div class="score-row" id="weight-row"></div>
+      <div class="dim-note">(1 × 8) — sums to 1.0</div>
+    </div>
+
+    <div class="rarrow" id="v-sum-arrow">
+      <div class="rarrow-line"></div>
+      <div class="rarrow-lbl">α · V (weighted sum)</div>
+      <div class="rarrow-line"></div>
+    </div>
+
+    <div class="rsec" id="output-sec">
+      <div class="rsec-label out">o<sub>t</sub> — output</div>
+      <div class="score-row" id="output-row"></div>
+      <div class="dim-note">(1 × d<sub>k</sub>) — next token's representation</div>
+    </div>
+
+    <div id="insight-box">
+      ✓ Identical to contiguous attention.<br>
+      Physical scatter is invisible to the math.<br>
+      Block traversal handles the gather.
+    </div>
+  </div>
+
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const BLOCK_SIZE = 4;  // tokens per physical block
+const DK         = 7;  // display columns representing d_k
+const N_BLOCKS   = 2;
+
+// T1–T4 in block 0 (P3), T5–T8 in block 1 (P7)
+const TOK_COLORS = [
+  '#1e88e5','#43a047','#f57c00','#7c3aed',   // block 0
+  '#e53935','#0891b2','#c2185b','#8d6e63',   // block 1
+];
+
+// Illustrative attention scores (0–3 scale) for q_t attending to T1–T8
+const SCORE_LEVELS  = [1, 1, 2, 2,  1, 2, 3, 3];
+// Post-softmax weights (slightly compressed, 0–3 scale)
+const WEIGHT_LEVELS = [0, 0, 1, 1,  0, 1, 2, 3];
+
+// ── DOM helpers ────────────────────────────────────────────────────────────
+function show(...ids) {
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('show'); });
+}
+function hide(...ids) {
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('show'); });
+}
+
+// ── Build query row ────────────────────────────────────────────────────────
+function buildQuery(delayMs = 0) {
+  const row = document.getElementById('query-row');
+  row.innerHTML = '';
+  for (let c = 0; c < DK; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'q-cell';
+    row.appendChild(cell);
+    setTimeout(() => cell.classList.add('show'), delayMs + c * 45);
+  }
+}
+
+// ── Build K or V rows inside a block card ──────────────────────────────────
+function buildKVSection(blockIdx, section, delayMs = 0) {
+  const sectionEl = document.getElementById(`${section}-section-${blockIdx}`);
+  sectionEl.querySelectorAll('.tok-row').forEach(r => r.remove());
+
+  const startTok = blockIdx * BLOCK_SIZE;
+  for (let t = 0; t < BLOCK_SIZE; t++) {
+    const tokIdx = startTok + t;
+    const color  = TOK_COLORS[tokIdx];
+    const row    = document.createElement('div');
+    row.className = 'tok-row';
+    row.id = `${section}-row-${blockIdx}-${t}`;
+
+    const num = document.createElement('div');
+    num.className = 'tok-num';
+    num.textContent = `T${tokIdx + 1}`;
+    row.appendChild(num);
+
+    for (let c = 0; c < DK; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'kv-cell';
+      cell.style.background = color + (section === 'k' ? 'cc' : '88');
+      row.appendChild(cell);
+    }
+    sectionEl.appendChild(row);
+    setTimeout(() => row.classList.add('show'), delayMs + t * 80);
+  }
+}
+
+function showAllKVRows(blockIdx, section) {
+  const sectionEl = document.getElementById(`${section}-section-${blockIdx}`);
+  sectionEl.querySelectorAll('.tok-row').forEach(r => r.classList.add('show'));
+}
+
+// ── Build score / weight cells ─────────────────────────────────────────────
+function buildScoreCells(rowId, levels, cls, delayMs, startIdx, count) {
+  const row = document.getElementById(rowId);
+  for (let i = startIdx; i < startIdx + count; i++) {
+    const cell = document.createElement('div');
+    cell.className = `sc ${cls}${levels[i]}`;
+    cell.id = `${rowId}-${i}`;
+    cell.textContent = `T${i + 1}`;
+    row.appendChild(cell);
+    setTimeout(() => cell.classList.add('show'), delayMs + (i - startIdx) * 75);
+  }
+}
+
+function addScoreSep(rowId) {
+  const sep = document.createElement('div');
+  sep.className = 'score-sep';
+  sep.textContent = '|';
+  document.getElementById(rowId).appendChild(sep);
+}
+
+function showAllCells(rowId) {
+  document.querySelectorAll(`#${rowId} .sc`).forEach(c => c.classList.add('show'));
+}
+
+// ── Build output row ───────────────────────────────────────────────────────
+function buildOutput(delayMs = 0) {
+  const row = document.getElementById('output-row');
+  row.innerHTML = '';
+  for (let c = 0; c < DK; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'out-cell';
+    row.appendChild(cell);
+    setTimeout(() => cell.classList.add('show'), delayMs + c * 55);
+  }
+}
+
+// ── Block card state ───────────────────────────────────────────────────────
+function setBlockState(idx, state) {
+  const card = document.getElementById(`block-${idx}`);
+  card.classList.remove('active-k', 'active-v', 'done');
+  if (state) card.classList.add(state);
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  hide('query-section', 'bt-section', 'bt-row-0', 'bt-row-1',
+       'scores-sec', 'weights-sec', 'softmax-arrow', 'v-sum-arrow',
+       'output-sec', 'insight-box', 'formula-note', 'chip-k', 'chip-v');
+
+  for (let b = 0; b < N_BLOCKS; b++) {
+    const card = document.getElementById(`block-${b}`);
+    card.classList.remove('show', 'active-k', 'active-v', 'done');
+    card.querySelectorAll('.tok-row').forEach(r => r.remove());
+  }
+
+  ['score-row', 'weight-row', 'output-row'].forEach(id => {
+    document.getElementById(id).innerHTML = '';
+  });
+  document.getElementById('query-row').innerHTML = '';
+}
+
+// ── Instant state reconstruction ───────────────────────────────────────────
+function applyInstant(n) {
+  if (n >= 1) {
+    show('bt-section', 'bt-row-0', 'bt-row-1');
+  }
+  if (n >= 2) {
+    show('query-section');
+    buildQuery(0);
+    document.querySelectorAll('.q-cell').forEach(c => c.classList.add('show'));
+  }
+  if (n >= 3) {
+    document.getElementById('block-0').classList.add('show');
+    buildKVSection(0, 'k', 0); showAllKVRows(0, 'k');
+    setBlockState(0, 'active-k');
+  }
+  if (n >= 4) {
+    show('scores-sec', 'chip-k');
+    buildScoreCells('score-row', SCORE_LEVELS, 's', 0, 0, BLOCK_SIZE);
+    addScoreSep('score-row');
+    showAllCells('score-row');
+  }
+  if (n >= 5) {
+    setBlockState(0, 'done');
+    document.getElementById('block-1').classList.add('show');
+    buildKVSection(1, 'k', 0); showAllKVRows(1, 'k');
+    setBlockState(1, 'active-k');
+  }
+  if (n >= 6) {
+    buildScoreCells('score-row', SCORE_LEVELS, 's', 0, BLOCK_SIZE, BLOCK_SIZE);
+    showAllCells('score-row');
+    setBlockState(1, 'done');
+  }
+  if (n >= 7) {
+    show('softmax-arrow', 'weights-sec');
+    buildScoreCells('weight-row', WEIGHT_LEVELS, 'w', 0, 0, BLOCK_SIZE * N_BLOCKS);
+    addScoreSep('weight-row');
+    showAllCells('weight-row');
+  }
+  if (n >= 8) {
+    show('chip-v');
+    buildKVSection(0, 'v', 0); showAllKVRows(0, 'v');
+    setBlockState(0, 'active-v');
+    setBlockState(1, null);
+  }
+  if (n >= 9) {
+    setBlockState(0, 'done');
+    buildKVSection(1, 'v', 0); showAllKVRows(1, 'v');
+    setBlockState(1, 'active-v');
+  }
+  if (n >= 10) {
+    show('v-sum-arrow', 'output-sec', 'insight-box', 'formula-note');
+    buildOutput(0);
+    document.querySelectorAll('#output-row .out-cell').forEach(c => c.classList.add('show'));
+    setBlockState(0, 'done'); setBlockState(1, 'done');
+  }
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'During decode, every new token must attend to the entire KV cache. The formula collapses to: o = softmax( q · Kᵀ / √dₖ ) · V — where q is a single row vector (the new token\'s query), and K, V are all cached key/value vectors. Standard implementations assume K and V are stored contiguously. PagedAttention stores them in non-contiguous physical blocks. Does that change the math?',
+    async run() {}
+  },
+  {
+    desc: 'The block table maps logical block indices to physical addresses. LB 0 maps to Physical Block P3 (holds K,V for tokens T1–T4). LB 1 maps to Physical Block P7 (holds K,V for tokens T5–T8). These blocks can be anywhere in GPU memory — no adjacency required. The block table is the only record of where each block lives.',
+    async run() {
+      show('bt-section');
+      await sleep(200);
+      show('bt-row-0');
+      await sleep(180);
+      show('bt-row-1');
+    }
+  },
+  {
+    desc: 'The query vector q_t is computed by multiplying the new token\'s embedding through learned weight matrix W_Q. Shape: (1 × dₖ). This is the same single vector regardless of how many KV blocks exist. It\'s what we\'ll dot-product against every cached key.',
+    async run() {
+      show('query-section');
+      buildQuery(100);
+      await sleep(100 + DK * 45 + 250);
+    }
+  },
+  {
+    desc: 'K phase, Block 0 (P3). Load the key vectors for tokens T1–T4 from Physical Block P3. These are 4 rows of size dₖ. The kernel reads them directly from their physical address — no copying or reordering needed.',
+    async run() {
+      document.getElementById('block-0').classList.add('show');
+      await sleep(200);
+      buildKVSection(0, 'k', 80);
+      setBlockState(0, 'active-k');
+      await sleep(80 + BLOCK_SIZE * 80 + 300);
+    }
+  },
+  {
+    desc: 'Compute q · K_P3ᵀ — dot product of the query with each key in Block P3. Result: 4 scores s[T1..T4]. The darker the cell, the higher the attention score — how much the new token T9 wants to "look at" each past token.',
+    async run() {
+      show('scores-sec', 'chip-k');
+      buildScoreCells('score-row', SCORE_LEVELS, 's', 80, 0, BLOCK_SIZE);
+      addScoreSep('score-row');
+      await sleep(80 + BLOCK_SIZE * 75 + 300);
+    }
+  },
+  {
+    desc: 'K phase, Block 1 (P7). Block P3 is done — mark it complete. Now load key vectors for tokens T5–T8 from Physical Block P7. P7 is in a completely different location in GPU memory, but the block table gives us the exact address.',
+    async run() {
+      setBlockState(0, 'done');
+      await sleep(250);
+      document.getElementById('block-1').classList.add('show');
+      await sleep(180);
+      buildKVSection(1, 'k', 80);
+      setBlockState(1, 'active-k');
+      await sleep(80 + BLOCK_SIZE * 80 + 300);
+    }
+  },
+  {
+    desc: 'Compute q · K_P7ᵀ — 4 more scores s[T5..T8]. Append them to the score vector: we now have all 8 scores. This is identical in value to computing q · Kᵀ against a contiguous (8-row) K matrix — the physical block boundary is invisible to the dot-product math.',
+    async run() {
+      buildScoreCells('score-row', SCORE_LEVELS, 's', 80, BLOCK_SIZE, BLOCK_SIZE);
+      setBlockState(1, 'done');
+      await sleep(80 + BLOCK_SIZE * 75 + 350);
+    }
+  },
+  {
+    desc: 'Apply softmax over all 8 scores at once: α = softmax(s / √dₖ). This single softmax operation must see every score — it cannot be done per-block because the normalization denominator (the partition function) requires all values. The resulting α weights sum to 1.0 and define how much each past token contributes to the output.',
+    async run() {
+      await sleep(200);
+      show('softmax-arrow');
+      await sleep(250);
+      show('weights-sec');
+      buildScoreCells('weight-row', WEIGHT_LEVELS, 'w', 80, 0, BLOCK_SIZE * N_BLOCKS);
+      addScoreSep('weight-row');
+      await sleep(80 + (BLOCK_SIZE * N_BLOCKS) * 75 + 300);
+    }
+  },
+  {
+    desc: 'V phase, Block 0 (P3). Load value vectors for tokens T1–T4. Multiply α[T1..T4] by each V row and accumulate into the running output sum. The output is initialized to zero; these first 4 tokens contribute their weighted share.',
+    async run() {
+      show('chip-v');
+      buildKVSection(0, 'v', 80);
+      setBlockState(0, 'active-v');
+      await sleep(80 + BLOCK_SIZE * 80 + 350);
+    }
+  },
+  {
+    desc: 'V phase, Block 1 (P7). Load value vectors for tokens T5–T8 from Physical Block P7. Multiply α[T5..T8] by each V row and add to the running sum. After this block the accumulation is complete — no more blocks remain.',
+    async run() {
+      setBlockState(0, 'done');
+      await sleep(250);
+      buildKVSection(1, 'v', 80);
+      setBlockState(1, 'active-v');
+      await sleep(80 + BLOCK_SIZE * 80 + 350);
+    }
+  },
+  {
+    desc: 'Output o_t (shape 1 × dₖ) is the new token\'s contextual representation — identical byte-for-byte to what standard contiguous attention would produce. PagedAttention changes only the memory layout of K and V, not how they\'re used. The math is a loop over logical blocks: gather scores → single softmax → accumulate weighted V. Physical scatter is completely invisible to the computation.',
+    async run() {
+      setBlockState(1, 'done');
+      await sleep(200);
+      show('v-sum-arrow', 'output-sec');
+      buildOutput(100);
+      await sleep(100 + DK * 55 + 300);
+      show('insight-box', 'formula-note');
+    }
+  },
+];
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else { if (n - cur > 1) { resetAll(); applyInstant(n - 1); } await STEPS[n].run(); }
+  cur = n; busy = false; updateUI();
+}
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length - 1 && playActive) { await goTo(cur + 1); await sleep(1000); }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#0f766e'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) {
+  ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id =>
+    document.getElementById(id).disabled = !en);
+}
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur + 1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === cur));
+}
+
+STEPS.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',  () => { stopPlay(); goTo(cur - 1); });
+document.getElementById('btn-next').addEventListener('click',  () => { stopPlay(); goTo(cur + 1); });
+document.getElementById('btn-play').addEventListener('click',  playAll);
+document.getElementById('btn-reset').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); stopPlay(); goTo(cur + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); stopPlay(); goTo(cur - 1); }
+});
+updateUI();
+</script>
+</body>
+</html>

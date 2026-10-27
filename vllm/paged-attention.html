@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PagedAttention — Step by Step</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 32px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#4f5ff8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 32px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;overflow:hidden;
+}
+
+.divider{width:1px;background:#e8eaf6;flex-shrink:0}
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+
+/* ── Left panel: request cards ────────────────────────────────────────── */
+#left-panel{
+  width:200px;flex-shrink:0;
+  padding:13px 12px;
+  display:flex;flex-direction:column;gap:4px;
+  overflow:hidden;
+}
+
+.req-card{
+  border-radius:7px;border:1.5px solid transparent;
+  padding:5px 8px;
+  opacity:0;transform:translateY(8px);
+  transition:opacity 320ms ease,transform 320ms ease;
+  flex-shrink:0;
+}
+.req-card.show{opacity:1;transform:translateY(0)}
+.req-card.r1{border-color:#1e88e5;background:#f4f9ff}
+.req-card.r2{border-color:#f57c00;background:#fffaf4}
+.req-card.r3{border-color:#43a047;background:#f4fdf5}
+.req-card.r4{border-color:#8e24aa;background:#fdf4ff}
+.req-card.r5{border-color:#e53935;background:#fff5f5}
+.req-card.r6{border-color:#00838f;background:#e0f7fa}
+.req-card.r7{border-color:#c2185b;background:#fce4ec}
+.req-card.r8{border-color:#5c6bc0;background:#ede7f6}
+
+.req-title{font-size:10px;font-weight:700;margin-bottom:0}
+.r1 .req-title{color:#1e88e5}.r2 .req-title{color:#f57c00}
+.r3 .req-title{color:#43a047}.r4 .req-title{color:#8e24aa}
+.r5 .req-title{color:#e53935}.r6 .req-title{color:#00838f}
+.r7 .req-title{color:#c2185b}.r8 .req-title{color:#5c6bc0}
+
+/* ── Center panel: unified block table ────────────────────────────────── */
+#bt-panel{
+  width:165px;flex-shrink:0;
+  padding:13px 10px;
+  display:flex;flex-direction:column;
+}
+
+#bt-grid{
+  display:grid;
+  /* req badge | LB0 | LB1 */
+  grid-template-columns: 26px 1fr 1fr;
+  gap:0;
+  align-content:start;
+}
+
+.bt-col-hdr{
+  font-size:8px;font-weight:700;color:#aab;
+  text-transform:uppercase;letter-spacing:.6px;
+  padding:0 2px 5px 2px;
+  text-align:center;
+}
+
+.bt-req-badge{
+  display:flex;align-items:center;justify-content:center;
+  border-radius:4px;font-size:8px;font-weight:800;
+  height:24px;
+  opacity:0;transition:opacity 320ms ease;
+  margin-bottom:5px;
+}
+.bt-req-badge.show{opacity:1}
+.bt-req-badge.r1{background:#dbeeff;color:#1e88e5}
+.bt-req-badge.r2{background:#fff3e0;color:#f57c00}
+.bt-req-badge.r3{background:#e8f5e9;color:#43a047}
+.bt-req-badge.r4{background:#f3e8ff;color:#8e24aa}
+.bt-req-badge.r5{background:#ffebee;color:#e53935}
+.bt-req-badge.r6{background:#e0f2f1;color:#00838f}
+.bt-req-badge.r7{background:#fce4ec;color:#c2185b}
+.bt-req-badge.r8{background:#ede7f6;color:#5c6bc0}
+
+.bt-cell{
+  height:24px;margin-bottom:5px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:4px;
+  font-size:9px;font-weight:700;
+  background:#f0f2fa;color:#ccc;border:1.2px solid #e0e4f0;
+  transition:background 280ms ease,color 280ms ease,border-color 280ms ease,transform 200ms ease;
+  opacity:0;margin-right:2px;
+}
+.bt-cell:last-child{margin-right:0}
+.bt-cell.show{opacity:1;transition:background 280ms ease,color 280ms ease,border-color 280ms ease,opacity 320ms ease}
+.bt-cell.set.r1{background:#dbeeff;color:#1e88e5;border-color:#1e88e5}
+.bt-cell.set.r2{background:#fff3e0;color:#f57c00;border-color:#f57c00}
+.bt-cell.set.r3{background:#e8f5e9;color:#43a047;border-color:#43a047}
+.bt-cell.set.r4{background:#f3e8ff;color:#8e24aa;border-color:#8e24aa}
+.bt-cell.set.r5{background:#ffebee;color:#e53935;border-color:#e53935}
+.bt-cell.set.r6{background:#e0f2f1;color:#00838f;border-color:#00838f}
+.bt-cell.set.r7{background:#fce4ec;color:#c2185b;border-color:#c2185b}
+.bt-cell.set.r8{background:#ede7f6;color:#5c6bc0;border-color:#5c6bc0}
+.bt-cell.pop{animation:btPop 350ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes btPop{0%{transform:scale(0.4)}100%{transform:scale(1)}}
+
+/* ── Right panel: free pool + physical grid ───────────────────────────── */
+#right-panel{flex:1;padding:13px 14px;display:flex;flex-direction:column;gap:7px}
+
+#free-pool{display:flex;flex-wrap:wrap;gap:4px}
+.fp-chip{
+  padding:2px 5px;border-radius:4px;font-size:8px;font-weight:700;
+  background:#e8f5e9;border:1.2px solid #43a047;color:#2e7d32;
+  transition:opacity 280ms ease;white-space:nowrap;
+}
+.fp-chip.gone{opacity:0;pointer-events:none}
+
+.sep{height:1px;background:#e8eaf6;flex-shrink:0}
+#grid-header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+#grid-note{font-size:9px;color:#bbb}
+
+#phys-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;flex:1}
+.pb{
+  border-radius:6px;border:1.5px solid #d4d8f0;background:#f5f6fc;
+  padding:4px 5px;display:flex;flex-direction:column;gap:2px;
+  transition:background 350ms ease,border-color 350ms ease,box-shadow 350ms ease;
+}
+.pb.r1{background:#dbeeff;border-color:#1e88e5}
+.pb.r2{background:#fff3e0;border-color:#f57c00}
+.pb.r3{background:#e8f5e9;border-color:#43a047}
+.pb.r4{background:#f3e8ff;border-color:#8e24aa}
+.pb.r5{background:#ffebee;border-color:#e53935}
+.pb.r6{background:#e0f2f1;border-color:#00838f}
+.pb.r7{background:#fce4ec;border-color:#c2185b}
+.pb.r8{background:#ede7f6;border-color:#5c6bc0}
+.pb.new-glow{box-shadow:0 0 0 3px #f9a82566,0 0 14px #f9a82533}
+.pb.pulse{animation:blockPulse 500ms ease-out}
+@keyframes blockPulse{0%{transform:scale(1)}45%{transform:scale(1.07)}100%{transform:scale(1)}}
+
+.pb-head{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.pb-id{font-size:7px;font-weight:700;color:#bbb}
+.pb.r1 .pb-id{color:#1e88e5}.pb.r2 .pb-id{color:#f57c00}
+.pb.r3 .pb-id{color:#43a047}.pb.r4 .pb-id{color:#8e24aa}
+.pb.r5 .pb-id{color:#e53935}.pb.r6 .pb-id{color:#00838f}
+.pb.r7 .pb-id{color:#c2185b}.pb.r8 .pb-id{color:#5c6bc0}
+.pb-owner{font-size:6px;font-weight:600;color:#ccc}
+.pb.r1 .pb-owner{color:#1565c0}.pb.r2 .pb-owner{color:#e65100}
+.pb.r3 .pb-owner{color:#1b5e20}.pb.r4 .pb-owner{color:#4a148c}
+.pb.r5 .pb-owner{color:#c62828}.pb.r6 .pb-owner{color:#00695c}
+.pb.r7 .pb-owner{color:#880e4f}.pb.r8 .pb-owner{color:#283593}
+
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;flex:1}
+.kv-slot{
+  border-radius:3px;background:#e4e8f4;min-height:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:5.5px;font-weight:700;color:transparent;
+  transition:background 250ms ease,color 200ms ease;
+}
+.kv-slot.filled{color:#fff}
+.kv-slot.pop{animation:slotPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.pb.r1 .kv-slot.filled{background:#1e88e5}
+.pb.r2 .kv-slot.filled{background:#f57c00}
+.pb.r3 .kv-slot.filled{background:#43a047}
+.pb.r4 .kv-slot.filled{background:#8e24aa}
+.pb.r5 .kv-slot.filled{background:#e53935}
+.pb.r6 .kv-slot.filled{background:#00838f}
+.pb.r7 .kv-slot.filled{background:#c2185b}
+.pb.r8 .kv-slot.filled{background:#5c6bc0}
+
+/* ── Floater ──────────────────────────────────────────────────────────── */
+.floater{
+  position:absolute;z-index:200;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;pointer-events:none;
+  box-shadow:0 4px 16px #0002;
+  transition:
+    left 680ms cubic-bezier(.25,.8,.25,1),top 680ms cubic-bezier(.25,.8,.25,1),
+    width 680ms cubic-bezier(.25,.8,.25,1),height 680ms cubic-bezier(.25,.8,.25,1),
+    border-radius 680ms ease,opacity 200ms ease;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+#desc-box{
+  width:calc(100vw - 32px);max-width:100%;margin-top:12px;
+  padding:12px 18px;background:#fff;border-radius:10px;
+  border-left:4px solid #4f5ff8;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px;
+}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#4f5ff8;color:#fff}
+#btn-next:hover:not(:disabled){background:#6472fa}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#43a047;color:#fff}
+#btn-play:hover:not(:disabled){background:#56b25a}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#4f5ff8;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>PagedAttention</h1>
+  </div>
+  <span id="step-pill">Step 1 / 9</span>
+</div>
+
+<div id="stage">
+
+  <!-- Left: compact request cards -->
+  <div id="left-panel">
+    <div class="panel-label">Requests</div>
+    <!-- injected by JS -->
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Center: unified block table -->
+  <div id="bt-panel">
+    <div class="panel-label">Block Tables</div>
+    <div id="bt-grid">
+      <!-- header row -->
+      <div class="bt-col-hdr"></div>
+      <div class="bt-col-hdr">LB0</div>
+      <div class="bt-col-hdr">LB1</div>
+      <!-- rows injected by JS -->
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Right: free pool + physical grid -->
+  <div id="right-panel">
+    <div>
+      <div class="panel-label">Free Block Pool <span style="font-size:9px;color:#bbb;text-transform:none;letter-spacing:0;font-weight:400">(16 blocks × 4 slots)</span></div>
+      <div id="free-pool"></div>
+    </div>
+    <div class="sep"></div>
+    <div id="grid-header">
+      <div class="panel-label" style="margin:0">Physical Memory Grid</div>
+      <span id="grid-note">4 KV slots / block</span>
+    </div>
+    <div id="phys-grid"></div>
+  </div>
+
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const stage      = document.getElementById('stage');
+const leftPanel  = document.getElementById('left-panel');
+const btGrid     = document.getElementById('bt-grid');
+const gridEl     = document.getElementById('phys-grid');
+const freePoolEl = document.getElementById('free-pool');
+
+// ── Request definitions ────────────────────────────────────────────────────
+// 8 requests, each using 2 logical blocks → fills all 16 physical blocks
+const REQ_DEFS = [
+  {id:'r1', num:1, label:'Req 1', nTok:8,  color:'#1e88e5'},
+  {id:'r2', num:2, label:'Req 2', nTok:7,  color:'#f57c00'},
+  {id:'r3', num:3, label:'Req 3', nTok:8,  color:'#43a047'},
+  {id:'r4', num:4, label:'Req 4', nTok:6,  color:'#8e24aa'},
+  {id:'r5', num:5, label:'Req 5', nTok:8,  color:'#e53935'},
+  {id:'r6', num:6, label:'Req 6', nTok:7,  color:'#00838f'},
+  {id:'r7', num:7, label:'Req 7', nTok:8,  color:'#c2185b'},
+  {id:'r8', num:8, label:'Req 8', nTok:5,  color:'#5c6bc0'},
+];
+
+// Physical block assignments — scattered deliberately to show non-contiguity
+// All 16 physical blocks (P0–P15) appear exactly once
+const BLOCK_MAP = {
+  r1: [ 0, 11],
+  r2: [ 5, 14],
+  r3: [10,  1],
+  r4: [15,  6],
+  r5: [ 3, 12],
+  r6: [ 8,  7],
+  r7: [13,  4],
+  r8: [ 2,  9],
+};
+
+// How many KV slots each logical block fills
+const SLOT_COUNTS = {
+  r1: [4, 4],   // 8 tokens
+  r2: [4, 3],   // 7 tokens
+  r3: [4, 4],   // 8 tokens
+  r4: [4, 2],   // 6 tokens
+  r5: [4, 4],   // 8 tokens
+  r6: [4, 3],   // 7 tokens
+  r7: [4, 4],   // 8 tokens
+  r8: [4, 1],   // 5 tokens
+};
+
+// ── Build free pool chips ──────────────────────────────────────────────────
+for (let i = 0; i < 16; i++) {
+  const chip = document.createElement('div');
+  chip.className = 'fp-chip'; chip.id = `fpc${i}`;
+  chip.textContent = `P${i}`;
+  freePoolEl.appendChild(chip);
+}
+
+// ── Build physical grid ────────────────────────────────────────────────────
+for (let i = 0; i < 16; i++) {
+  const b = document.createElement('div');
+  b.className = 'pb'; b.id = `pb${i}`;
+  b.innerHTML = `
+    <div class="pb-head">
+      <span class="pb-id">P${i}</span>
+      <span class="pb-owner" id="pbo${i}"></span>
+    </div>
+    <div class="kv-grid">
+      ${[0,1,2,3].map(s=>`<div class="kv-slot" id="pvs${i}_${s}"></div>`).join('')}
+    </div>`;
+  gridEl.appendChild(b);
+}
+
+// ── Build request cards ────────────────────────────────────────────────────
+REQ_DEFS.forEach(({ id, label, nTok }) => {
+  const card = document.createElement('div');
+  card.className = `req-card ${id}`; card.id = `card-${id}`;
+  card.innerHTML = `<div class="req-title">${label} <span style="font-size:8px;color:#bbb;font-weight:400">${nTok} tokens</span></div>`;
+  leftPanel.appendChild(card);
+});
+
+// ── Build unified block table (center panel) ───────────────────────────────
+// Grid columns: [badge] [LB0] [LB1]
+REQ_DEFS.forEach(({ id, num }) => {
+  // Badge
+  const badge = document.createElement('div');
+  badge.className = `bt-req-badge ${id}`; badge.id = `bt-badge-${id}`;
+  badge.textContent = `R${num}`;
+  btGrid.appendChild(badge);
+
+  // LB0–LB1 cells
+  for (let lb = 0; lb < 2; lb++) {
+    const cell = document.createElement('div');
+    cell.className = 'bt-cell'; cell.id = `btc-${id}-${lb}`;
+    cell.textContent = '—';
+    btGrid.appendChild(cell);
+  }
+});
+
+// ── Reveal / hide block table row ─────────────────────────────────────────
+function showBtRow(req) {
+  [`bt-badge-${req}`,`btc-${req}-0`,`btc-${req}-1`].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('show');
+  });
+}
+function hideBtRow(req) {
+  [`bt-badge-${req}`,`btc-${req}-0`,`btc-${req}-1`].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
+  });
+}
+
+// ── Animation helpers ──────────────────────────────────────────────────────
+async function showCard(req) {
+  const card = document.getElementById(`card-${req}`);
+  card.classList.add('show');
+  showBtRow(req);
+}
+
+async function flyAllocate(req, lbIdx, pbId) {
+  const def   = REQ_DEFS.find(d => d.id === req);
+  const color = def.color;
+
+  const fromEl = document.getElementById(`fpc${pbId}`);
+  const toEl   = document.getElementById(`pb${pbId}`);
+  const stRect   = stage.getBoundingClientRect();
+  const fromRect = fromEl.getBoundingClientRect();
+  const toRect   = toEl.getBoundingClientRect();
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `
+    left:${fromRect.left-stRect.left}px; top:${fromRect.top-stRect.top}px;
+    width:${fromRect.width}px; height:${fromRect.height}px;
+    background:${color}22; border:2px solid ${color}; color:${color}; opacity:0;`;
+  stage.appendChild(fl);
+  fromEl.classList.add('gone');
+
+  await raf2();
+  fl.style.opacity = '1';
+  await raf2();
+
+  fl.style.left = `${toRect.left-stRect.left}px`;
+  fl.style.top  = `${toRect.top-stRect.top}px`;
+  fl.style.width = `${toRect.width}px`;
+  fl.style.height = `${toRect.height}px`;
+  fl.style.borderRadius = '7px';
+  await sleep(720);
+
+  const blk = document.getElementById(`pb${pbId}`);
+  blk.classList.add(req, 'pulse', 'new-glow');
+  document.getElementById(`pbo${pbId}`).textContent = `R${def.num}·LB${lbIdx}`;
+  fl.remove();
+  await sleep(380);
+  blk.classList.remove('new-glow', 'pulse');
+
+  // Update block table cell
+  const cell = document.getElementById(`btc-${req}-${lbIdx}`);
+  cell.textContent = `P${pbId}`;
+  cell.classList.add('set', req, 'pop');
+  cell.addEventListener('animationend', () => cell.classList.remove('pop'), { once: true });
+}
+
+async function fillSlotsBatch(pbId, count, startTokIdx, delayMs = 110) {
+  for (let s = 0; s < count; s++) {
+    const slot = document.getElementById(`pvs${pbId}_${s}`);
+    slot.textContent = `T${startTokIdx+s+1}`;
+    slot.classList.add('filled', 'pop');
+    slot.addEventListener('animationend', () => slot.classList.remove('pop'), { once: true });
+    if (s < count-1) await sleep(delayMs);
+  }
+}
+
+async function flyFree(pbId) {
+  const blk  = document.getElementById(`pb${pbId}`);
+  const chip = document.getElementById(`fpc${pbId}`);
+  const stRect   = stage.getBoundingClientRect();
+  const blkRect  = blk.getBoundingClientRect();
+  const chipRect = chip.getBoundingClientRect();
+  const reqClass = ['r1','r2','r3','r4','r5','r6','r7','r8'].find(c => blk.classList.contains(c));
+  const def = reqClass ? REQ_DEFS.find(d => d.id === reqClass) : null;
+  const color = def ? def.color : '#43a047';
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `left:${blkRect.left-stRect.left}px;top:${blkRect.top-stRect.top}px;width:${blkRect.width}px;height:${blkRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  stage.appendChild(fl);
+
+  // Clear block immediately
+  blk.className = 'pb'; blk.style = '';
+  document.getElementById(`pbo${pbId}`).textContent = '';
+  for (let s = 0; s < 4; s++) {
+    const sl = document.getElementById(`pvs${pbId}_${s}`);
+    sl.className = 'kv-slot'; sl.textContent = '';
+  }
+
+  await raf2(); fl.style.opacity = '1'; await raf2();
+  fl.style.left   = `${chipRect.left-stRect.left}px`;
+  fl.style.top    = `${chipRect.top-stRect.top}px`;
+  fl.style.width  = `${chipRect.width}px`;
+  fl.style.height = `${chipRect.height}px`;
+  fl.style.borderRadius = '4px';
+  await sleep(700);
+  chip.classList.remove('gone');
+  fl.remove();
+}
+
+async function flyAllocateNoTable(req, pbId, ownerLabel) {
+  const def   = REQ_DEFS.find(d => d.id === req);
+  const color = def.color;
+  const fromEl = document.getElementById(`fpc${pbId}`);
+  const toEl   = document.getElementById(`pb${pbId}`);
+  const stRect   = stage.getBoundingClientRect();
+  const fromRect = fromEl.getBoundingClientRect();
+  const toRect   = toEl.getBoundingClientRect();
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pbId}`;
+  fl.style.cssText = `left:${fromRect.left-stRect.left}px;top:${fromRect.top-stRect.top}px;width:${fromRect.width}px;height:${fromRect.height}px;background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  stage.appendChild(fl);
+  fromEl.classList.add('gone');
+
+  await raf2(); fl.style.opacity = '1'; await raf2();
+  fl.style.left = `${toRect.left-stRect.left}px`;
+  fl.style.top  = `${toRect.top-stRect.top}px`;
+  fl.style.width = `${toRect.width}px`;
+  fl.style.height = `${toRect.height}px`;
+  fl.style.borderRadius = '7px';
+  await sleep(720);
+
+  const blk = document.getElementById(`pb${pbId}`);
+  blk.classList.add(req, 'pulse', 'new-glow');
+  document.getElementById(`pbo${pbId}`).textContent = ownerLabel;
+  fl.remove();
+  await sleep(380);
+  blk.classList.remove('new-glow', 'pulse');
+}
+
+// ── Instant-state helpers ──────────────────────────────────────────────────
+function setBlkInst(pbId, req, lbl) {
+  document.getElementById(`pb${pbId}`).classList.add(req);
+  document.getElementById(`pbo${pbId}`).textContent = lbl;
+}
+function fillSlotInst(pbId, slotIdx, label) {
+  const sl = document.getElementById(`pvs${pbId}_${slotIdx}`);
+  sl.textContent = label; sl.classList.add('filled');
+}
+function setBtcInst(req, lb, pb) {
+  const el = document.getElementById(`btc-${req}-${lb}`);
+  if (el) { el.textContent = `P${pb}`; el.classList.add('set', req); }
+}
+function markGone(pbId) { document.getElementById(`fpc${pbId}`).classList.add('gone'); }
+
+function showAllCards() {
+  REQ_DEFS.forEach(({ id }) => {
+    const card = document.getElementById(`card-${id}`);
+    card.classList.add('show');
+    card.style.opacity = '';
+    showBtRow(id);
+  });
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  stage.querySelectorAll('.floater').forEach(f => f.remove());
+  for (let i = 0; i < 16; i++) {
+    const b = document.getElementById(`pb${i}`);
+    b.className = 'pb'; b.style = '';
+    document.getElementById(`pbo${i}`).textContent = '';
+    for (let s = 0; s < 4; s++) {
+      const sl = document.getElementById(`pvs${i}_${s}`);
+      sl.className = 'kv-slot'; sl.textContent = '';
+    }
+    document.getElementById(`fpc${i}`).classList.remove('gone');
+  }
+  REQ_DEFS.forEach(({ id }) => {
+    const card = document.getElementById(`card-${id}`);
+    card.classList.remove('show');
+    card.style.opacity = '';
+    hideBtRow(id);
+    for (let lb = 0; lb < 2; lb++) {
+      const cell = document.getElementById(`btc-${id}-${lb}`);
+      if (cell) { cell.textContent = '—'; cell.className = 'bt-cell'; }
+    }
+  });
+}
+
+// ── Instant state reconstruction for backward navigation ──────────────────
+function applyInstant(n) {
+  if (n >= 1) showAllCards();
+
+  if (n >= 2) {
+    REQ_DEFS.forEach(({id, num}) => {
+      const pb = BLOCK_MAP[id][0];
+      setBlkInst(pb, id, `R${num}·LB0`); setBtcInst(id, 0, pb); markGone(pb);
+    });
+  }
+  if (n >= 3) {
+    REQ_DEFS.forEach(({id}) => {
+      const pb = BLOCK_MAP[id][0];
+      for (let s=0;s<SLOT_COUNTS[id][0];s++) fillSlotInst(pb, s, `T${s+1}`);
+    });
+  }
+  if (n >= 4) {
+    REQ_DEFS.forEach(({id, num}) => {
+      const pb = BLOCK_MAP[id][1];
+      setBlkInst(pb, id, `R${num}·LB1`); setBtcInst(id, 1, pb); markGone(pb);
+    });
+  }
+  if (n >= 5) {
+    REQ_DEFS.forEach(({id}) => {
+      const pb = BLOCK_MAP[id][1];
+      for (let s=0;s<SLOT_COUNTS[id][1];s++) fillSlotInst(pb, s, `T${s+5}`);
+    });
+  }
+  // n>=6: wave — no additional persistent state
+
+  if (n >= 7) {
+    // R1 freed
+    BLOCK_MAP.r1.forEach(pb => {
+      const blk = document.getElementById(`pb${pb}`);
+      blk.className = 'pb'; blk.style = '';
+      document.getElementById(`pbo${pb}`).textContent = '';
+      for (let s=0;s<4;s++) {
+        const sl=document.getElementById(`pvs${pb}_${s}`);
+        sl.className='kv-slot'; sl.textContent='';
+      }
+      document.getElementById(`fpc${pb}`).classList.remove('gone');
+    });
+    for (let lb=0;lb<2;lb++) {
+      const cell = document.getElementById(`btc-r1-${lb}`);
+      if (cell) { cell.textContent='—'; cell.className='bt-cell show'; }
+    }
+    document.getElementById('card-r1').style.opacity = '0.4';
+  }
+
+  if (n >= 8) {
+    // R4 LB1 (P6) slots 2,3 filled with T7, T8
+    fillSlotInst(BLOCK_MAP.r4[1], 2, 'T7');
+    fillSlotInst(BLOCK_MAP.r4[1], 3, 'T8');
+    // R4 claims P0 as LB2
+    setBlkInst(0, 'r4', 'R4·LB2');
+    fillSlotInst(0, 0, 'T9'); fillSlotInst(0, 1, 'T10');
+    markGone(0);
+  }
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'GPU memory: 16 physical blocks, 4 KV-vector slots each — all free. With PagedAttention, blocks are allocated on demand and scattered non-contiguously; the block table handles all address translation.',
+    async run() {}
+  },
+  {
+    desc: '8 requests arrive simultaneously. Each gets a row in the block table, initialized to "—". No physical memory committed yet — allocation happens lazily as tokens are generated.',
+    async run() {
+      await Promise.all(REQ_DEFS.map(({ id }) => showCard(id)));
+    }
+  },
+  {
+    desc: 'Allocation round 1 — LB0 assigned for all 8 requests simultaneously. 8 blocks fly from the free pool to scattered physical addresses. With fragmentation, 8 requests × 8 slots each would need 64 contiguous slots — impossible here. With PagedAttention, non-contiguity is free.',
+    async run() {
+      await Promise.all(REQ_DEFS.map(({ id }) => flyAllocate(id, 0, BLOCK_MAP[id][0])));
+    }
+  },
+  {
+    desc: 'T1–T4 cached into all 8 LB0 blocks in parallel. Every request\'s first 4 tokens stored across 8 different physical blocks, none adjacent.',
+    async run() {
+      await Promise.all(REQ_DEFS.map(({ id }) =>
+        fillSlotsBatch(BLOCK_MAP[id][0], SLOT_COUNTS[id][0], 0, 100)));
+    }
+  },
+  {
+    desc: 'Allocation round 2 — LB1 for all 8 requests. The last 8 free blocks claimed simultaneously. Free pool is now empty, all 16 blocks owned.',
+    async run() {
+      await Promise.all(REQ_DEFS.map(({ id }) => flyAllocate(id, 1, BLOCK_MAP[id][1])));
+    }
+  },
+  {
+    desc: 'T5–T8 cached into LB1 blocks. R1, R3, R5, R7 fill all 4 slots (8 tokens total). R2, R6 fill 3 (7 tokens). R4 fills 2 (6 tokens). R8 fills 1 (5 tokens). Partial last blocks reserve space for the next decode step.',
+    async run() {
+      await Promise.all(REQ_DEFS.map(({ id }) =>
+        fillSlotsBatch(BLOCK_MAP[id][1], SLOT_COUNTS[id][1], 4, 100)));
+    }
+  },
+  {
+    desc: 'Zero fragmentation — all 16 blocks serving 8 concurrent requests. Compare: with fixed pre-allocation at max_seq_len = 8 tokens, those same 16 blocks could only serve 4 requests (2 blocks × 8 slots pre-reserved each × 4 = 16). PagedAttention fits 2× the batch at the same memory size.',
+    async run() {
+      for (let i = 0; i < 16; i++) {
+        const b = document.getElementById(`pb${i}`);
+        b.classList.add('pulse');
+        b.addEventListener('animationend', () => b.classList.remove('pulse'), { once: true });
+        await sleep(45);
+      }
+    }
+  },
+  {
+    desc: 'R1 finishes generating — its 2 physical blocks (P0, P11) are freed instantly. No waiting, no copying. P0 and P11 return to the free pool the moment R1 completes, available for any other request.',
+    async run() {
+      const card = document.getElementById('card-r1');
+      card.style.transition = 'opacity 350ms ease';
+      card.style.opacity = '0.4';
+      await sleep(400);
+      await Promise.all(BLOCK_MAP.r1.map(pb => flyFree(pb)));
+      for (let lb = 0; lb < 2; lb++) {
+        const cell = document.getElementById(`btc-r1-${lb}`);
+        if (cell) { cell.textContent = '—'; cell.className = 'bt-cell show'; }
+      }
+    }
+  },
+  {
+    desc: 'R4 generates T7–T8, filling LB1 (P6) completely. Then T9 arrives — R4 needs a new block. It immediately claims P0 (just freed by R1). Freed blocks return to the pool the instant their owner finishes — zero idle time between one request ending and another using that memory.',
+    async run() {
+      // Fill remaining slots in R4's LB1 (P6) — slots 2 and 3 with T7, T8
+      const p6 = BLOCK_MAP.r4[1]; // P6
+      for (let s = 2; s < 4; s++) {
+        const slot = document.getElementById(`pvs${p6}_${s}`);
+        slot.textContent = `T${s+5}`;
+        slot.classList.add('filled', 'pop');
+        slot.addEventListener('animationend', () => slot.classList.remove('pop'), { once: true });
+        if (s < 3) await sleep(130);
+      }
+      await sleep(300);
+      // R4 claims P0 (freed by R1) as LB2
+      await flyAllocateNoTable('r4', 0, 'R4·LB2');
+      await fillSlotsBatch(0, 2, 8, 120);
+    }
+  },
+];
+
+// ── Navigation ────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else {
+    if (n - cur > 1) { resetAll(); applyInstant(n-1); }
+    await STEPS[n].run();
+  }
+  cur = n; busy = false; updateUI();
+}
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length-1 && playActive) { await goTo(cur+1); await sleep(900); }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#43a047'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) { ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id => document.getElementById(id).disabled = !en); }
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length-1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' active':'');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',  () => { stopPlay(); goTo(cur-1); });
+document.getElementById('btn-next').addEventListener('click',  () => { stopPlay(); goTo(cur+1); });
+document.getElementById('btn-play').addEventListener('click',  playAll);
+document.getElementById('btn-reset').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if (e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>
