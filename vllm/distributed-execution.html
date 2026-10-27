@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Distributed Execution — Tensor Parallelism</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;
+  display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;
+  width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#1d4ed8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;
+  padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+
+.panel-label{font-size:10px;font-weight:700;color:#aab;text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:5px;flex-shrink:0}
+.divider-h{height:1px;background:#e8eaf6;flex-shrink:0}
+.divider-v{width:1px;background:#e8eaf6;flex-shrink:0}
+
+/* ── Master section ─────────────────────────────────────────────────────────*/
+#master-section{
+  display:flex;flex-shrink:0;height:185px;overflow:hidden;
+}
+
+#master-info{
+  width:210px;flex-shrink:0;padding:13px 14px;
+  display:flex;flex-direction:column;gap:7px;
+}
+.master-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#eff6ff;border:1.5px solid #3b82f6;border-radius:8px;
+  padding:5px 10px;font-size:10px;font-weight:800;color:#1e40af;
+  width:fit-content;
+}
+.master-desc{font-size:8px;line-height:1.65;color:#64748b}
+
+#req-queue{opacity:0;transition:opacity 350ms ease;margin-top:auto}
+#req-queue.show{opacity:1}
+.req-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;
+  padding:3px 9px;font-size:9px;font-weight:700;color:#92400e;
+  opacity:0;transform:translateX(-8px);
+  transition:opacity 280ms ease,transform 280ms ease;
+}
+.req-chip.show{opacity:1;transform:translateX(0)}
+
+/* Block table */
+#bt-section{flex:1;padding:13px 14px 13px 0;display:flex;flex-direction:column;
+  opacity:0;transition:opacity 350ms ease;overflow:hidden}
+#bt-section.show{opacity:1}
+
+#bt-table{
+  display:grid;
+  grid-template-columns:40px 38px 1fr 1fr 1fr;
+  gap:2px;align-content:start;flex:1;
+}
+.bt-hdr{font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;
+  letter-spacing:.4px;padding:3px 4px;text-align:center;border-bottom:1.5px solid #e2e8f0}
+.bt-req{font-size:8px;font-weight:800;padding:4px;
+  display:flex;align-items:center;justify-content:center;border-radius:4px;
+  opacity:0;transition:opacity 280ms ease}
+.bt-req.show{opacity:1}
+.bt-req.r1{background:#fef3c7;color:#92400e}
+.bt-lb{font-size:8px;font-weight:700;padding:4px;
+  display:flex;align-items:center;justify-content:center;
+  color:#64748b;background:#f8fafc;border-radius:4px;
+  opacity:0;transition:opacity 280ms ease}
+.bt-lb.show{opacity:1}
+.bt-phys{
+  font-size:8.5px;font-weight:800;padding:4px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:4px;background:#f0f2fa;color:#ccc;border:1.2px solid #e0e4f0;
+  transition:background 280ms ease,color 280ms ease,border-color 280ms ease,transform 220ms ease;
+  opacity:0;
+}
+.bt-phys.show{opacity:1}
+.bt-phys.set.g0{background:#dbeeff;color:#1e88e5;border-color:#1e88e5}
+.bt-phys.set.g1{background:#e8f5e9;color:#43a047;border-color:#43a047}
+.bt-phys.set.g2{background:#f3e8ff;color:#7c3aed;border-color:#7c3aed}
+.bt-phys.pop{animation:btPop 300ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes btPop{0%{transform:scale(0.3)}100%{transform:scale(1)}}
+
+/* ── GPU section ─────────────────────────────────────────────────────────── */
+#gpu-section{flex:1;display:flex;overflow:hidden;position:relative}
+
+.gpu-card{
+  flex:1;padding:12px 11px;
+  display:flex;flex-direction:column;gap:6px;
+  opacity:0;transform:translateY(8px);
+  transition:opacity 350ms ease,transform 350ms ease;
+}
+.gpu-card.show{opacity:1;transform:translateY(0)}
+
+.gpu-header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.gpu-name{font-size:11px;font-weight:800}
+.gpu-name.g0{color:#1e88e5}.gpu-name.g1{color:#43a047}.gpu-name.g2{color:#7c3aed}
+
+.head-badge{font-size:8px;font-weight:700;padding:2px 7px;border-radius:8px;
+  opacity:0;transition:opacity 280ms ease}
+.head-badge.show{opacity:1}
+.head-badge.g0{background:#dbeeff;color:#1e88e5;border:1px solid #1e88e5}
+.head-badge.g1{background:#e8f5e9;color:#43a047;border:1px solid #43a047}
+.head-badge.g2{background:#f3e8ff;color:#7c3aed;border:1px solid #7c3aed}
+
+.status-badge{font-size:7.5px;font-weight:700;padding:2px 7px;border-radius:8px;
+  opacity:0;transition:opacity 220ms ease,background 220ms ease,color 220ms ease,border-color 220ms ease}
+.status-badge.show{opacity:1}
+.status-badge.idle{background:#f1f5f9;color:#94a3b8;border:1px solid #e2e8f0}
+.status-badge.computing{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.status-badge.syncing{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd}
+.status-badge.done{background:#dcfce7;color:#166534;border:1px solid #86efac}
+
+/* Free pool */
+.gpu-pool{display:flex;gap:3px;flex-wrap:wrap;flex-shrink:0}
+.fp-chip{
+  padding:1px 5px;border-radius:3px;font-size:7.5px;font-weight:700;
+  border:1.2px solid;transition:opacity 250ms ease;white-space:nowrap;
+}
+.fp-chip.g0{background:#f4f9ff;border-color:#1e88e5;color:#1e88e5}
+.fp-chip.g1{background:#f4fdf5;border-color:#43a047;color:#43a047}
+.fp-chip.g2{background:#fdf4ff;border-color:#7c3aed;color:#7c3aed}
+.fp-chip.gone{opacity:0;pointer-events:none}
+
+/* Physical blocks in GPU card — styled like paged-attention.html */
+.gpu-blocks{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;flex:1;min-height:0}
+.gpu-block{
+  border-radius:6px;border:1.5px solid #d4d8f0;background:#f5f6fc;
+  padding:4px 5px;display:flex;flex-direction:column;gap:2px;
+  transition:background 300ms ease,border-color 300ms ease,box-shadow 300ms ease;
+}
+.gpu-block.g0{background:#dbeeff;border-color:#1e88e5}
+.gpu-block.g1{background:#e8f5e9;border-color:#43a047}
+.gpu-block.g2{background:#f3e8ff;border-color:#7c3aed}
+.gpu-block.pulse{animation:blkPulse 480ms ease-out}
+@keyframes blkPulse{0%{transform:scale(1)}45%{transform:scale(1.07)}100%{transform:scale(1)}}
+
+.gb-head{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.gb-id{font-size:7px;font-weight:700;color:#bbb}
+.gpu-block.g0 .gb-id{color:#1e88e5}
+.gpu-block.g1 .gb-id{color:#43a047}
+.gpu-block.g2 .gb-id{color:#7c3aed}
+.gb-owner{font-size:6px;font-weight:600;color:#ccc}
+.gpu-block.g0 .gb-owner{color:#1565c0}
+.gpu-block.g1 .gb-owner{color:#1b5e20}
+.gpu-block.g2 .gb-owner{color:#4a148c}
+
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;flex:1}
+.kv-slot{
+  border-radius:3px;background:#e4e8f4;min-height:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:5.5px;font-weight:700;color:transparent;
+  transition:background 220ms ease,color 180ms ease;
+}
+.kv-slot.filled{color:#fff}
+.kv-slot.pop{animation:slotPop 280ms cubic-bezier(.34,1.56,.64,1)}
+@keyframes slotPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.gpu-block.g0 .kv-slot.filled{background:#1e88e5}
+.gpu-block.g1 .kv-slot.filled{background:#43a047}
+.gpu-block.g2 .kv-slot.filled{background:#7c3aed}
+
+/* ── All-reduce overlay ──────────────────────────────────────────────────── */
+#ar-overlay{
+  position:absolute;inset:0;pointer-events:none;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity 300ms ease;
+}
+#ar-overlay.show{opacity:1}
+.ar-bar{
+  position:absolute;top:50%;left:5%;right:5%;height:3px;
+  background:linear-gradient(90deg,#7c3aed,#1e88e5,#43a047,#1e88e5,#7c3aed);
+  border-radius:2px;transform:translateY(-50%);
+  animation:arPulse 900ms ease-in-out infinite;
+}
+@keyframes arPulse{
+  0%,100%{opacity:.35;box-shadow:none}
+  50%{opacity:1;box-shadow:0 0 12px #1e88e555}
+}
+.ar-dots{position:absolute;top:50%;left:5%;right:5%;
+  display:flex;justify-content:space-around;transform:translateY(-50%)}
+.ar-dot{
+  width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #1e88e5;
+  animation:arDot 900ms ease-in-out infinite;
+}
+.ar-dot:nth-child(2){border-color:#43a047;animation-delay:200ms}
+.ar-dot:nth-child(3){border-color:#7c3aed;animation-delay:400ms}
+@keyframes arDot{0%,100%{transform:scale(1)}50%{transform:scale(1.5)}}
+.ar-label{
+  background:#1d4ed8;color:#fff;
+  font-size:9px;font-weight:800;padding:4px 12px;border-radius:10px;
+  box-shadow:0 2px 10px #1d4ed844;white-space:nowrap;position:relative;z-index:1;
+}
+
+/* ── Floater ──────────────────────────────────────────────────────────────── */
+.floater{
+  position:absolute;z-index:200;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:8px;font-weight:700;pointer-events:none;
+  box-shadow:0 3px 12px #0002;
+  transition:
+    left 600ms cubic-bezier(.25,.8,.25,1),
+    top 600ms cubic-bezier(.25,.8,.25,1),
+    width 600ms cubic-bezier(.25,.8,.25,1),
+    height 600ms cubic-bezier(.25,.8,.25,1),
+    border-radius 600ms ease,opacity 200ms ease;
+}
+
+/* ── Broadcast arrows (master → GPUs) ──────────────────────────────────── */
+#broadcast-overlay{
+  position:absolute;inset:0;pointer-events:none;
+  opacity:0;transition:opacity 300ms ease;
+}
+#broadcast-overlay.show{opacity:1}
+.bc-arrow{
+  position:absolute;width:2px;background:linear-gradient(180deg,#1d4ed8,#1d4ed888);
+  border-radius:1px;transform-origin:top center;
+  animation:bcPulse 700ms ease-in-out infinite;
+}
+@keyframes bcPulse{0%,100%{opacity:.3}50%{opacity:.9}}
+.bc-arrow-head{
+  position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:6px solid #1d4ed8;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;
+  background:#fff;border-radius:10px;border-left:4px solid #1d4ed8;
+  box-shadow:0 2px 10px #1a1d3e0d;font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#1d4ed8;color:#fff}
+#btn-next:hover:not(:disabled){background:#1e40af}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#1d4ed8;color:#fff}
+#btn-play:hover:not(:disabled){background:#1e40af}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#1d4ed8;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Distributed Execution — Tensor Parallelism</h1>
+  </div>
+  <span id="step-pill">Step 1 / 11</span>
+</div>
+
+<div id="stage">
+
+  <!-- Master section -->
+  <div id="master-section">
+    <div id="master-info">
+      <div class="panel-label">Coordinator</div>
+      <div class="master-badge" id="master-badge">◆ Master Worker</div>
+      <div class="master-desc" id="master-desc">
+        Schedules requests and manages the KV cache block table.
+        Broadcasts block mappings to every GPU worker before each forward pass.
+      </div>
+      <div id="req-queue">
+        <div class="panel-label" style="margin-bottom:3px">Active</div>
+        <div class="req-chip" id="req-chip">R1 · 4 tokens (T1–T4)</div>
+      </div>
+    </div>
+
+    <div class="divider-v"></div>
+
+    <div id="bt-section">
+      <div class="panel-label">Block Table — logical → physical per GPU</div>
+      <div id="bt-table">
+        <div class="bt-hdr">Req</div>
+        <div class="bt-hdr">LB</div>
+        <div class="bt-hdr" style="color:#1e88e5">GPU 0</div>
+        <div class="bt-hdr" style="color:#43a047">GPU 1</div>
+        <div class="bt-hdr" style="color:#7c3aed">GPU 2</div>
+        <!-- rows injected by JS -->
+      </div>
+    </div>
+  </div>
+
+  <div class="divider-h"></div>
+
+  <!-- GPU section -->
+  <div id="gpu-section">
+
+    <div class="gpu-card" id="gpu-card-0">
+      <div class="gpu-header">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="gpu-name g0">GPU 0</span>
+          <span class="head-badge g0" id="hbadge-0">Heads 0–1</span>
+        </div>
+        <span class="status-badge idle" id="status-0">IDLE</span>
+      </div>
+      <div class="panel-label">Free Pool</div>
+      <div class="gpu-pool" id="pool-0"></div>
+      <div class="panel-label" style="margin-top:4px">KV Cache (heads 0–1 only)</div>
+      <div class="gpu-blocks" id="blocks-0"></div>
+    </div>
+
+    <div class="divider-v"></div>
+
+    <div class="gpu-card" id="gpu-card-1">
+      <div class="gpu-header">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="gpu-name g1">GPU 1</span>
+          <span class="head-badge g1" id="hbadge-1">Heads 2–3</span>
+        </div>
+        <span class="status-badge idle" id="status-1">IDLE</span>
+      </div>
+      <div class="panel-label">Free Pool</div>
+      <div class="gpu-pool" id="pool-1"></div>
+      <div class="panel-label" style="margin-top:4px">KV Cache (heads 2–3 only)</div>
+      <div class="gpu-blocks" id="blocks-1"></div>
+    </div>
+
+    <div class="divider-v"></div>
+
+    <div class="gpu-card" id="gpu-card-2">
+      <div class="gpu-header">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="gpu-name g2">GPU 2</span>
+          <span class="head-badge g2" id="hbadge-2">Heads 4–5</span>
+        </div>
+        <span class="status-badge idle" id="status-2">IDLE</span>
+      </div>
+      <div class="panel-label">Free Pool</div>
+      <div class="gpu-pool" id="pool-2"></div>
+      <div class="panel-label" style="margin-top:4px">KV Cache (heads 4–5 only)</div>
+      <div class="gpu-blocks" id="blocks-2"></div>
+    </div>
+
+    <!-- All-reduce overlay -->
+    <div id="ar-overlay">
+      <div class="ar-bar"></div>
+      <div class="ar-dots">
+        <div class="ar-dot"></div>
+        <div class="ar-dot"></div>
+        <div class="ar-dot"></div>
+      </div>
+      <div class="ar-label" id="ar-label">All-Reduce</div>
+    </div>
+
+    <!-- Broadcast overlay -->
+    <div id="broadcast-overlay"></div>
+
+  </div>
+
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const stage = document.getElementById('stage');
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const N_GPU          = 3;
+const BLOCKS_PER_GPU = 4;   // physical blocks per GPU
+const SLOTS_PER_BLOCK= 2;   // KV slots per block (2 tokens)
+const GPU_COLORS     = ['#1e88e5', '#43a047', '#7c3aed'];
+const GPU_CLASSES    = ['g0', 'g1', 'g2'];
+const HEAD_LABELS    = ['Heads 0–1', 'Heads 2–3', 'Heads 4–5'];
+
+// Block allocation plan (physical block ID on each GPU for each logical block)
+// LB0: GPU0→P2, GPU1→P1, GPU2→P0    (holds T1,T2)
+// LB1: GPU0→P0, GPU1→P3, GPU2→P2    (holds T3,T4)
+// LB2: GPU0→P1, GPU1→P2, GPU2→P3    (decode: T5)
+const ALLOC = [
+  [2, 1, 0],   // LB0
+  [0, 3, 2],   // LB1
+  [1, 2, 3],   // LB2
+];
+
+// ── DOM build ──────────────────────────────────────────────────────────────
+
+// Free pool chips
+for (let g = 0; g < N_GPU; g++) {
+  const pool = document.getElementById(`pool-${g}`);
+  for (let b = 0; b < BLOCKS_PER_GPU; b++) {
+    const chip = document.createElement('div');
+    chip.className = `fp-chip ${GPU_CLASSES[g]}`;
+    chip.id = `fpc-${g}-${b}`;
+    chip.textContent = `P${b}`;
+    pool.appendChild(chip);
+  }
+}
+
+// Physical blocks
+for (let g = 0; g < N_GPU; g++) {
+  const grid = document.getElementById(`blocks-${g}`);
+  for (let b = 0; b < BLOCKS_PER_GPU; b++) {
+    const blk = document.createElement('div');
+    blk.className = 'gpu-block';
+    blk.id = `gb-${g}-${b}`;
+    blk.innerHTML = `
+      <div class="gb-head">
+        <span class="gb-id">P${b}</span>
+        <span class="gb-owner" id="gbo-${g}-${b}"></span>
+      </div>
+      <div class="kv-grid">
+        <div class="kv-slot" id="gvs-${g}-${b}-0"></div>
+        <div class="kv-slot" id="gvs-${g}-${b}-1"></div>
+      </div>`;
+    grid.appendChild(blk);
+  }
+}
+
+// Block table rows (LB0, LB1, LB2 — start hidden)
+const btTable = document.getElementById('bt-table');
+for (let lb = 0; lb < 3; lb++) {
+  const rq = document.createElement('div');
+  rq.className = 'bt-req r1'; rq.id = `btr-${lb}`; rq.textContent = 'R1';
+  btTable.appendChild(rq);
+
+  const lbc = document.createElement('div');
+  lbc.className = 'bt-lb'; lbc.id = `btl-${lb}`; lbc.textContent = `LB${lb}`;
+  btTable.appendChild(lbc);
+
+  for (let g = 0; g < N_GPU; g++) {
+    const cell = document.createElement('div');
+    cell.className = 'bt-phys'; cell.id = `btp-${lb}-${g}`; cell.textContent = '—';
+    btTable.appendChild(cell);
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function showEl(...ids){ ids.forEach(id => { const e = document.getElementById(id); if(e) e.classList.add('show'); }); }
+function hideEl(...ids){ ids.forEach(id => { const e = document.getElementById(id); if(e) e.classList.remove('show'); }); }
+
+function setStatus(g, cls, label) {
+  const b = document.getElementById(`status-${g}`);
+  b.className = `status-badge show ${cls}`;
+  b.textContent = label;
+}
+
+function showBtRow(lb) {
+  showEl(`btr-${lb}`, `btl-${lb}`);
+  for (let g = 0; g < N_GPU; g++) showEl(`btp-${lb}-${g}`);
+}
+
+// ── Fly a free pool chip to its block (one GPU) ───────────────────────────
+async function flyAlloc(g, pb, lbIdx) {
+  const chip   = document.getElementById(`fpc-${g}-${pb}`);
+  const blk    = document.getElementById(`gb-${g}-${pb}`);
+  const stRect = stage.getBoundingClientRect();
+  const cRect  = chip.getBoundingClientRect();
+  const bRect  = blk.getBoundingClientRect();
+  const color  = GPU_COLORS[g];
+
+  const fl = document.createElement('div');
+  fl.className = 'floater';
+  fl.textContent = `P${pb}`;
+  fl.style.cssText = `left:${cRect.left-stRect.left}px;top:${cRect.top-stRect.top}px;` +
+    `width:${cRect.width}px;height:${cRect.height}px;` +
+    `background:${color}22;border:2px solid ${color};color:${color};opacity:0;`;
+  stage.appendChild(fl);
+  chip.classList.add('gone');
+
+  await raf2(); fl.style.opacity='1'; await raf2();
+  fl.style.left=`${bRect.left-stRect.left}px`; fl.style.top=`${bRect.top-stRect.top}px`;
+  fl.style.width=`${bRect.width}px`; fl.style.height=`${bRect.height}px`;
+  fl.style.borderRadius='6px';
+  await sleep(640);
+
+  blk.classList.add(GPU_CLASSES[g], 'pulse');
+  document.getElementById(`gbo-${g}-${pb}`).textContent = `R1·LB${lbIdx}`;
+  fl.remove();
+  await sleep(360);
+  blk.classList.remove('pulse');
+
+  // Update block table cell
+  const cell = document.getElementById(`btp-${lbIdx}-${g}`);
+  cell.textContent = `P${pb}`;
+  cell.classList.add('set', GPU_CLASSES[g], 'pop');
+  cell.addEventListener('animationend', () => cell.classList.remove('pop'), {once:true});
+}
+
+// ── Fill KV slots on a GPU block ──────────────────────────────────────────
+async function fillSlots(g, pb, tokens, delayMs=120) {
+  for (let s = 0; s < tokens.length; s++) {
+    const slot = document.getElementById(`gvs-${g}-${pb}-${s}`);
+    slot.textContent = tokens[s];
+    slot.classList.add('filled', 'pop');
+    slot.addEventListener('animationend', () => slot.classList.remove('pop'), {once:true});
+    if (s < tokens.length-1) await sleep(delayMs);
+  }
+}
+
+// ── Instant-state helpers ─────────────────────────────────────────────────
+function allocInst(g, pb, lbIdx) {
+  document.getElementById(`fpc-${g}-${pb}`).classList.add('gone');
+  document.getElementById(`gb-${g}-${pb}`).classList.add(GPU_CLASSES[g]);
+  document.getElementById(`gbo-${g}-${pb}`).textContent = `R1·LB${lbIdx}`;
+  const cell = document.getElementById(`btp-${lbIdx}-${g}`);
+  cell.textContent = `P${pb}`; cell.classList.add('set', GPU_CLASSES[g]);
+}
+function fillInst(g, pb, tokens) {
+  tokens.forEach((tok, s) => {
+    const sl = document.getElementById(`gvs-${g}-${pb}-${s}`);
+    sl.textContent = tok; sl.classList.add('filled');
+  });
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  stage.querySelectorAll('.floater').forEach(f => f.remove());
+
+  for (let g = 0; g < N_GPU; g++) {
+    document.getElementById(`gpu-card-${g}`).classList.remove('show');
+    document.getElementById(`hbadge-${g}`).classList.remove('show');
+    const sb = document.getElementById(`status-${g}`);
+    sb.className = 'status-badge idle'; sb.textContent = 'IDLE';
+
+    for (let b = 0; b < BLOCKS_PER_GPU; b++) {
+      document.getElementById(`fpc-${g}-${b}`).classList.remove('gone');
+      const blk = document.getElementById(`gb-${g}-${b}`);
+      blk.className = 'gpu-block';
+      document.getElementById(`gbo-${g}-${b}`).textContent = '';
+      for (let s = 0; s < SLOTS_PER_BLOCK; s++) {
+        const sl = document.getElementById(`gvs-${g}-${b}-${s}`);
+        sl.className = 'kv-slot'; sl.textContent = '';
+      }
+    }
+  }
+
+  for (let lb = 0; lb < 3; lb++) {
+    document.getElementById(`btr-${lb}`).classList.remove('show');
+    document.getElementById(`btl-${lb}`).classList.remove('show');
+    for (let g = 0; g < N_GPU; g++) {
+      const c = document.getElementById(`btp-${lb}-${g}`);
+      c.textContent = '—'; c.className = 'bt-phys';
+    }
+  }
+
+  hideEl('bt-section','req-queue','ar-overlay','broadcast-overlay');
+  document.getElementById('req-chip').classList.remove('show');
+}
+
+// ── Instant state reconstruction ──────────────────────────────────────────
+function applyInstant(n) {
+  if (n >= 1) {
+    for (let g = 0; g < N_GPU; g++) showEl(`gpu-card-${g}`);
+  }
+  if (n >= 2) {
+    for (let g = 0; g < N_GPU; g++) {
+      showEl(`hbadge-${g}`, `status-${g}`);
+      document.getElementById(`status-${g}`).classList.add('show');
+    }
+  }
+  if (n >= 3) showEl('bt-section');
+  if (n >= 4) {
+    showEl('req-queue'); showEl('req-chip');
+    showBtRow(0); showBtRow(1);
+  }
+  if (n >= 5) {
+    for (let lb = 0; lb < 2; lb++)
+      for (let g = 0; g < N_GPU; g++)
+        allocInst(g, ALLOC[lb][g], lb);
+  }
+  if (n >= 6) {
+    for (let g = 0; g < N_GPU; g++) {
+      fillInst(g, ALLOC[0][g], ['T1','T2']);
+      fillInst(g, ALLOC[1][g], ['T3','T4']);
+      setStatus(g, 'computing', 'COMPUTING');
+    }
+  }
+  // n==7: all-reduce was transient — same visual state as n>=6
+  if (n >= 8) {
+    for (let g = 0; g < N_GPU; g++) setStatus(g, 'done', 'DONE');
+  }
+  if (n >= 9) {
+    showBtRow(2);
+    for (let g = 0; g < N_GPU; g++) {
+      allocInst(g, ALLOC[2][g], 2);
+      fillInst(g, ALLOC[2][g], ['T5']);
+      setStatus(g, 'done', 'DONE');
+    }
+  }
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+const STEPS = [
+  {
+    desc: 'Large LLMs often exceed a single GPU\'s memory. vLLM uses Megatron-LM tensor parallelism: every transformer layer is computed across G GPU workers simultaneously. Each worker handles a disjoint partition of the model\'s attention heads and feedforward weight matrices, so total activation memory is roughly 1/G per GPU.',
+    async run() {}
+  },
+  {
+    desc: 'Three GPU workers share the computation. Each GPU holds a shard of every weight matrix in the model — Q, K, V projection, attention output projection, and FFN layers are all partitioned. No GPU holds a complete layer; they work in lock-step, one micro-batch at a time.',
+    async run() {
+      await Promise.all([0,1,2].map(g => (async () => {
+        await sleep(g * 130);
+        showEl(`gpu-card-${g}`);
+      })()));
+    }
+  },
+  {
+    desc: 'With 6 total attention heads split across 3 GPUs: GPU 0 owns heads 0–1, GPU 1 owns heads 2–3, GPU 2 owns heads 4–5. Each GPU independently computes Q, K, V for its heads and runs full attention — but only for those heads. K and V vectors are never transferred between GPUs.',
+    async run() {
+      for (let g = 0; g < N_GPU; g++) {
+        await sleep(150);
+        showEl(`hbadge-${g}`, `status-${g}`);
+      }
+    }
+  },
+  {
+    desc: 'A single block manager runs on the master process. It manages the KV cache block table for all GPU workers centrally. Each GPU has its own physical block pool sized for its head partition — GPU 0 only stores K,V for heads 0–1, so its blocks are 1/3 the size of a full model\'s KV cache.',
+    async run() { showEl('bt-section'); }
+  },
+  {
+    desc: 'Request R1 arrives with 4 prompt tokens (T1–T4). The master allocates 2 logical blocks: LB0 covers T1–T2, LB1 covers T3–T4. The block table records a separate physical block ID for every logical block on every GPU — because each GPU\'s free pool is independent.',
+    async run() {
+      showEl('req-queue');
+      await sleep(200);
+      showEl('req-chip');
+      await sleep(300);
+      showBtRow(0); showBtRow(1);
+    }
+  },
+  {
+    desc: 'Block allocation is simultaneous across all GPUs. LB0 is claimed on GPU 0 (→P2), GPU 1 (→P1), and GPU 2 (→P0) in the same step. Then LB1 is allocated across all three. Physical block IDs differ per GPU, but the logical block number is consistent — workers use their own local address spaces.',
+    async run() {
+      await Promise.all([0,1,2].map(g => flyAlloc(g, ALLOC[0][g], 0)));
+      await sleep(300);
+      await Promise.all([0,1,2].map(g => flyAlloc(g, ALLOC[1][g], 1)));
+    }
+  },
+  {
+    desc: 'Prefill begins. All 3 GPUs execute the forward pass in parallel. GPU 0 computes attention for heads 0–1 and writes K,V vectors for T1–T4 into its local blocks. GPUs 1 and 2 do the same for their heads. No KV data crosses GPU boundaries — each worker reads only its own blocks.',
+    async run() {
+      for (let g = 0; g < N_GPU; g++) setStatus(g, 'computing', 'COMPUTING');
+      await sleep(350);
+      await Promise.all([0,1,2].map(g => fillSlots(g, ALLOC[0][g], ['T1','T2'], 130)));
+      await sleep(250);
+      await Promise.all([0,1,2].map(g => fillSlots(g, ALLOC[1][g], ['T3','T4'], 130)));
+    }
+  },
+  {
+    desc: 'After the attention output projection, partial results from each GPU must be summed. An all-reduce operation synchronizes all 3 GPUs over NVLink or PCIe. vLLM inherits this from Megatron-LM: 2 all-reduces per transformer layer (one after attention output, one after the FFN down-projection). KV cache is unaffected — only activations are communicated.',
+    async run() {
+      for (let g = 0; g < N_GPU; g++) setStatus(g, 'syncing', 'SYNCING');
+      document.getElementById('ar-label').textContent = 'All-Reduce (activations only)';
+      showEl('ar-overlay');
+      await sleep(1600);
+      hideEl('ar-overlay');
+    }
+  },
+  {
+    desc: 'Prefill complete. T1–T4\'s K and V vectors are now cached across all 3 GPUs. The total KV cache for this sequence is distributed: each GPU holds 2/6 of the heads. The prefill output (the last token\'s representation, synchronized across GPUs) is used to sample the first decode token.',
+    async run() {
+      for (let g = 0; g < N_GPU; g++) setStatus(g, 'done', 'DONE');
+    }
+  },
+  {
+    desc: 'Decode step: T5 is the new token. Before the decode forward pass, the master allocates LB2 on all 3 GPUs simultaneously and broadcasts the updated block table. Each GPU allocates from its own free pool — GPU 0 gets P1, GPU 1 gets P2, GPU 2 gets P3. T5\'s K,V are written to slot 0 of LB2 on each GPU.',
+    async run() {
+      for (let g = 0; g < N_GPU; g++) setStatus(g, 'computing', 'COMPUTING');
+      showBtRow(2);
+      await sleep(200);
+      await Promise.all([0,1,2].map(g => flyAlloc(g, ALLOC[2][g], 2)));
+      await sleep(200);
+      await Promise.all([0,1,2].map(g => fillSlots(g, ALLOC[2][g], ['T5'], 0)));
+      await sleep(300);
+      showEl('ar-overlay');
+      document.getElementById('ar-label').textContent = 'All-Reduce';
+      await sleep(1200);
+      hideEl('ar-overlay');
+      for (let g = 0; g < N_GPU; g++) setStatus(g, 'done', 'DONE');
+    }
+  },
+  {
+    desc: 'Summary: tensor parallelism + PagedAttention. The block manager allocates and frees blocks across all GPUs simultaneously — block tables are the single source of truth. Each GPU stores KV for its own heads only, so per-GPU KV memory scales as (H/G) × seq_len × d_head. Adding GPUs reduces both compute time AND KV memory per device linearly.',
+    async run() {
+      for (let i = 0; i < BLOCKS_PER_GPU; i++) {
+        for (let g = 0; g < N_GPU; g++) {
+          const b = document.getElementById(`gb-${g}-${i}`);
+          if (b.classList.contains(GPU_CLASSES[g])) {
+            b.classList.add('pulse');
+            b.addEventListener('animationend', () => b.classList.remove('pulse'), {once:true});
+          }
+        }
+        await sleep(80);
+      }
+    }
+  },
+];
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+let cur=0, busy=false, playActive=false;
+
+async function goTo(n) {
+  if (busy||n<0||n>=STEPS.length) return;
+  busy=true; setUI(false);
+  if (n<=cur) { resetAll(); applyInstant(n); }
+  else { if (n-cur>1) { resetAll(); applyInstant(n-1); } await STEPS[n].run(); }
+  cur=n; busy=false; updateUI();
+}
+async function playAll() {
+  if (busy) return;
+  playActive=true;
+  document.getElementById('btn-play').textContent='■ Stop';
+  document.getElementById('btn-play').style.background='#e53935';
+  document.getElementById('btn-play').onclick=stopPlay;
+  while (cur<STEPS.length-1&&playActive) { await goTo(cur+1); await sleep(1000); }
+  endPlay();
+}
+function stopPlay(){playActive=false;endPlay();}
+function endPlay(){
+  playActive=false;
+  const btn=document.getElementById('btn-play');
+  btn.textContent='▶ Play All';btn.style.background='#1d4ed8';btn.onclick=playAll;
+  updateUI();
+}
+function setUI(en){['btn-prev','btn-next','btn-play','btn-reset'].forEach(id=>document.getElementById(id).disabled=!en);}
+function updateUI(){
+  document.getElementById('step-pill').textContent=`Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent=STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled=cur===0;
+  document.getElementById('btn-next').disabled=cur===STEPS.length-1;
+  document.getElementById('btn-play').disabled=cur===STEPS.length-1;
+  document.getElementById('btn-reset').disabled=false;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+}
+
+STEPS.forEach((_,i)=>{
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.addEventListener('click',()=>{stopPlay();goTo(i);});
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{stopPlay();goTo(cur-1);});
+document.getElementById('btn-next').addEventListener('click',()=>{stopPlay();goTo(cur+1);});
+document.getElementById('btn-play').addEventListener('click',playAll);
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();goTo(0);});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if(e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#09111f" />
+    <title>PipeDream — Partitioning simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="simulator.css?v=9" />
+  </head>
+  <body class="sim-page">
+    <header class="topbar">
+      <a class="brand" href="animation.html" aria-label="PipeDream explainer home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>PIPE<span>DREAM</span></span>
+      </a>
+      <span class="page-title">GPU partitioning simulator</span>
+      <a class="paper-link" href="animation.html">Animation <span>↗</span></a>
+    </header>
+
+    <main>
+
+      <section class="workbench" id="controls">
+        <aside class="control-panel">
+          <div class="panel-label">Controls</div>
+
+          <label class="field-label" for="architecture">ARCHITECTURE</label>
+          <div class="select-wrap">
+            <select id="architecture">
+              <option value="small">Small CNN</option>
+              <option value="alexnet">AlexNet-style CNN</option>
+              <option value="vgg" selected>VGG-style CNN</option>
+              <option value="ffn">Deep feed-forward network</option>
+            </select>
+            <span>⌄</span>
+          </div>
+          <p class="field-hint" id="architecture-hint">16 compute blocks · image input 224 × 224 × 3</p>
+
+          <div class="control-field">
+            <div class="field-line"><label for="gpu-count">GPU COUNT</label><output id="gpu-count-value">8</output></div>
+            <input id="gpu-count" class="range" type="range" min="1" max="16" value="8" step="1" />
+            <div class="range-ends"><span>1</span><span>16</span></div>
+          </div>
+
+          <div class="control-field">
+            <div class="field-line"><label for="tflops">FP16 COMPUTE</label><output><span id="tflops-value">125</span> TFLOP/s</output></div>
+            <input id="tflops" class="range" type="range" min="10" max="400" value="125" step="5" />
+            <div class="range-ends"><span>10</span><span>400</span></div>
+          </div>
+
+          <div class="control-field">
+            <div class="field-line"><label for="bandwidth">LINK BANDWIDTH</label><output><span id="bandwidth-value">25</span> GB/s</output></div>
+            <input id="bandwidth" class="range coral-range" type="range" min="1" max="200" value="25" step="1" />
+            <div class="range-ends"><span>1</span><span>200</span></div>
+          </div>
+
+          <div class="control-field">
+            <div class="field-line"><label for="microbatch">MICROBATCH SIZE</label><output id="microbatch-value">32</output></div>
+            <div class="batch-options" role="group" aria-label="Microbatch size">
+              <button type="button" data-batch="8">8</button>
+              <button type="button" data-batch="16">16</button>
+              <button type="button" data-batch="32" class="active">32</button>
+              <button type="button" data-batch="64">64</button>
+              <button type="button" data-batch="128">128</button>
+            </div>
+          </div>
+
+          <button class="optimize-btn" id="optimize-btn" type="button"><span>RUN DYNAMIC PROGRAM</span><b>→</b></button>
+
+          <div class="model-note">
+            <span>COST MODEL</span>
+            <p>Peak FLOPs are treated as achieved throughput. Communication has no fixed latency and may overlap compute.</p>
+          </div>
+        </aside>
+
+        <section class="results-panel" id="plan">
+          <div class="result-header">
+            <div><p class="panel-label"></p><h2 id="plan-title">VGG-style CNN on 8 GPUs</h2></div>
+            <div class="status-pill"><i></i><span id="status-copy">OPTIMAL PLAN READY</span></div>
+          </div>
+
+          <div class="headline-metrics">
+            <article class="speedup-metric" title="Estimated steady-state throughput ratio: full-model data-parallel time divided by optimized plan time, using the same GPUs and cost model. 1× means equal throughput."><span>SPEEDUP VS DATA PARALLEL</span><strong id="speedup-value">—</strong><small id="speedup-baseline">—</small></article>
+            <article><span>BOTTLENECK TIME</span><strong id="bottleneck-value">—</strong><small>per microbatch</small></article>
+            <article><span>STEADY THROUGHPUT</span><strong id="throughput-value">—</strong><small>samples / second</small></article>
+            <article><span>PIPELINE STAGES</span><strong id="stage-count-value">—</strong><small id="replica-summary">—</small></article>
+          </div>
+
+          <div class="gpu-topology">
+            <div class="viz-head">
+              <span>Click a GPU to inspect its layers</span>
+              <div>→ Activations · ← Gradients · Red = bottleneck stage</div>
+            </div>
+            <div class="graph-shell">
+              <div class="graph-progress" id="graph-progress"><i></i><span>EVALUATING DP STATES…</span></div>
+              <div class="graph-scroll"><svg id="gpu-graph" class="gpu-graph" role="img" aria-label="Graph of GPU stage assignments"></svg></div>
+              <aside class="gpu-inspector" id="gpu-inspector">
+                <div><span>SELECTED DEVICE</span><strong id="selected-gpu">GPU 0</strong></div>
+                <p id="selected-assignment">Stage assignment</p>
+                <dl>
+                  <div><dt>LAYERS</dt><dd id="selected-layers">—</dd></div>
+                  <div><dt>COMPUTE</dt><dd id="selected-compute">—</dd></div>
+                  <div><dt>WEIGHT SYNC</dt><dd id="selected-sync">—</dd></div>
+                  <div><dt>INPUT BOUNDARY</dt><dd id="selected-boundary">—</dd></div>
+                </dl>
+              </aside>
+            </div>
+          </div>
+
+        </section>
+      </section>
+
+    </main>
+
+
+    <script src="simulator.js?v=9"></script>
+  </body>
+</html>

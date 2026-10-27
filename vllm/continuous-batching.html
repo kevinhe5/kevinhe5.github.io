@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Continuous Batching — vLLM Scheduling</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 32px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#4f5ff8;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+#stage{
+  position:relative;
+  width:calc(100vw - 32px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;flex-direction:column;
+  overflow:hidden;padding:14px 18px 10px;gap:0;
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────────── */
+.tl-panel{
+  flex:1;display:flex;flex-direction:column;gap:0;min-height:0;
+}
+.tl-panel:first-child{
+  border-bottom:1px solid #e8eaf6;padding-bottom:10px;margin-bottom:10px;
+}
+
+.tl-header{
+  display:flex;align-items:center;gap:10px;flex-shrink:0;margin-bottom:5px;
+}
+.tl-title{font-size:11px;font-weight:800}
+.tl-badge{font-size:9px;font-weight:700;padding:2px 9px;border-radius:12px}
+.util-badge{font-size:9px;font-weight:700;margin-left:auto;opacity:0;transition:opacity 400ms ease}
+.util-badge.show{opacity:1}
+
+/* ── Slot rows ─────────────────────────────────────────────────────────── */
+.slot-rows{flex:1;display:flex;flex-direction:column;gap:3px;min-height:0}
+
+.slot-row{
+  flex:1;display:flex;align-items:center;gap:0;min-height:0;
+}
+.slot-label{
+  width:54px;flex-shrink:0;
+  font-size:9px;font-weight:700;color:#aaa;text-align:right;padding-right:8px;
+}
+
+/* ── Token grid ─────────────────────────────────────────────────────────── */
+.token-grid{
+  flex:1;display:grid;
+  grid-template-columns:repeat(13,1fr);
+  gap:3px;height:100%;
+  position:relative;
+}
+
+.tcell{
+  border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:800;color:rgba(255,255,255,.92);
+  opacity:0;
+  transition:opacity 220ms ease, transform 220ms cubic-bezier(.34,1.56,.64,1);
+  transform:scale(.7);
+  cursor:default;
+  min-height:0;
+}
+.tcell.show{opacity:1;transform:scale(1)}
+.tcell.idle{
+  background:repeating-linear-gradient(45deg,#dde1f0 0,#dde1f0 3px,#eef0fa 3px,#eef0fa 6px);
+  border:1.5px dashed #c0c8e8;
+  color:#b0b8d0;font-weight:700;font-size:8px;
+}
+.tcell.idle.show{opacity:1;transform:scale(1)}
+.tcell.empty{opacity:0!important;pointer-events:none}
+
+/* Current-tick cursor */
+.cursor-col{
+  position:absolute;top:0;bottom:0;
+  width:3px;border-radius:2px;
+  background:#4f5ff8;
+  opacity:0;transition:left 180ms ease, opacity 250ms ease;
+  pointer-events:none;z-index:5;
+}
+.cursor-col.show{opacity:.35}
+
+/* Tick label row */
+.tick-row{
+  display:flex;align-items:flex-start;flex-shrink:0;
+  height:14px;margin-top:1px;
+}
+.tick-grid{
+  flex:1;display:grid;
+  grid-template-columns:repeat(13,1fr);
+  gap:3px;
+}
+.tick-lbl{
+  font-size:7.5px;color:#c0c4d8;font-weight:600;text-align:center;
+  transition:color 250ms ease,font-weight 250ms ease;
+}
+.tick-lbl.active{color:#4f5ff8;font-weight:800}
+
+/* Queue display */
+#queue-row{
+  display:flex;align-items:center;gap:6px;
+  flex-shrink:0;margin-bottom:4px;
+  font-size:9px;color:#aaa;font-weight:700;
+}
+.q-chip{
+  font-size:8.5px;font-weight:800;padding:2px 8px;border-radius:10px;color:#fff;
+  opacity:0;transition:opacity 300ms ease, text-decoration 200ms ease;
+}
+.q-chip.show{opacity:1}
+.q-chip.done{opacity:.3;text-decoration:line-through}
+
+/* Summary box */
+#summary-box{
+  position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  width:90%;max-width:580px;
+  border-radius:8px;background:#fff;border:1.5px solid #c0c8e8;
+  padding:9px 14px;font-size:.82rem;line-height:1.6;color:#2a2d4e;
+  opacity:0;transition:opacity 400ms ease;z-index:20;
+  display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;
+}
+#summary-box.show{opacity:1}
+.sum-col{display:flex;flex-direction:column;gap:3px}
+.sum-head{font-size:10px;font-weight:800}
+.sum-stat{font-size:9px;color:#555}
+
+#desc-box{width:calc(100vw - 32px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #4f5ff8;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#4f5ff8;color:#fff}
+#btn-next:hover:not(:disabled){background:#6472fa}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#43a047;color:#fff}
+#btn-play:hover:not(:disabled){background:#56b25a}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#4f5ff8;transform:scale(1.3)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>Continuous Batching</h1>
+  </div>
+  <span id="step-pill">Step 1 / 15</span>
+</div>
+
+<div id="stage">
+
+  <!-- Static batching panel -->
+  <div class="tl-panel">
+    <div class="tl-header">
+      <span class="tl-title" style="color:#c62828">▲ Static Batching</span>
+      <span class="tl-badge" style="background:#fdecea;color:#c62828">waits for full batch to finish</span>
+      <span class="util-badge" id="static-util" style="color:#c62828"></span>
+    </div>
+    <div class="slot-rows" id="static-slots"></div>
+    <div class="tick-row">
+      <div style="width:54px;flex-shrink:0"></div>
+      <div class="tick-grid" id="static-ticks"></div>
+    </div>
+  </div>
+
+  <!-- Continuous batching panel -->
+  <div class="tl-panel">
+    <div class="tl-header">
+      <span class="tl-title" style="color:#2e7d32">▼ Continuous Batching</span>
+      <span class="tl-badge" style="background:#e8f5e9;color:#2e7d32">slots in new requests each iteration</span>
+      <span class="util-badge" id="cont-util" style="color:#2e7d32"></span>
+    </div>
+    <div class="slot-rows" id="cont-slots"></div>
+    <div class="tick-row">
+      <div style="width:54px;flex-shrink:0"></div>
+      <div class="tick-grid" id="cont-ticks"></div>
+    </div>
+  </div>
+
+  <div id="summary-box">
+    <div class="sum-col">
+      <div class="sum-head" style="color:#c62828">Static Batching</div>
+      <div class="sum-stat">Batch 1 ends: t = 8</div>
+      <div class="sum-stat">Batch 2 ends: t = 13</div>
+      <div class="sum-stat">Idle slot-steps: 8 of 39 total</div>
+      <div class="sum-stat" style="font-weight:700">GPU utilization ≈ 79%</div>
+    </div>
+    <div class="sum-col">
+      <div class="sum-head" style="color:#2e7d32">Continuous Batching</div>
+      <div class="sum-stat">All 6 requests done: t = 11</div>
+      <div class="sum-stat">2 iterations faster than static</div>
+      <div class="sum-stat">Idle slot-steps: 0 while busy</div>
+      <div class="sum-stat" style="font-weight:700">GPU utilization ≈ 85%</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const raf2  = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+// ── Grid data ─────────────────────────────────────────────────────────────
+// Requests: A=3 tokens, B=5, C=8, D=4, E=5, F=3
+// Static: batch 1 (A,B,C) starts t=1; batch 2 (D,E,F) starts t=9 (after C finishes)
+// Continuous: D starts t=4 (when A done), E starts t=6 (when B done), F starts t=9 (when C done)
+// Total ticks shown: 13
+
+const TICKS = 13;
+
+const REQ_COLORS = {
+  A:'#1e88e5', B:'#8e24aa', C:'#e53935',
+  D:'#f57c00', E:'#00838f', F:'#2e7d32',
+};
+
+// makeSlot([req, count], ...) → array of TICKS request-chars (null = empty, 'idle' = idle)
+function makeSlot(...runs) {
+  const arr = [];
+  for (const [req, n] of runs) for (let i = 0; i < n; i++) arr.push(req);
+  while (arr.length < TICKS) arr.push(null);
+  return arr;
+}
+
+const STATIC = [
+  makeSlot(['A',3],['idle',5],['D',4],[null,1]),   // Slot 1
+  makeSlot(['B',5],['idle',3],['E',5]           ),  // Slot 2
+  makeSlot(['C',8],['F',3],[null,2]             ),   // Slot 3
+];
+const CONT = [
+  makeSlot(['A',3],['D',4],[null,6]),                // Slot 1
+  makeSlot(['B',5],['E',5],[null,3]),                // Slot 2
+  makeSlot(['C',8],['F',3],[null,2]),                // Slot 3
+];
+
+// ── Build DOM ─────────────────────────────────────────────────────────────
+function buildPanel(slotContainerId, tickContainerId, data, prefix) {
+  const slotCont  = document.getElementById(slotContainerId);
+  const tickCont  = document.getElementById(tickContainerId);
+
+  data.forEach((slot, si) => {
+    const row = document.createElement('div');
+    row.className = 'slot-row';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'slot-label';
+    lbl.textContent = `Slot ${si + 1}`;
+    row.appendChild(lbl);
+
+    const grid = document.createElement('div');
+    grid.className = 'token-grid';
+    grid.id = `${prefix}-grid-${si}`;
+
+    // cursor overlay
+    const cursor = document.createElement('div');
+    cursor.className = 'cursor-col';
+    cursor.id = `${prefix}-cursor-${si}`;
+    grid.appendChild(cursor);
+
+    let prevReq = null;
+    slot.forEach((req, ti) => {
+      const cell = document.createElement('div');
+      cell.className = 'tcell';
+      cell.id = `${prefix}-c${si}-t${ti}`;
+      if (req === 'idle') {
+        cell.classList.add('idle');
+        cell.textContent = 'idle';
+      } else if (req) {
+        cell.style.background = REQ_COLORS[req];
+        // Show label on first cell of each run
+        if (req !== prevReq) cell.textContent = req;
+      } else {
+        cell.classList.add('empty');
+      }
+      prevReq = req;
+      grid.appendChild(cell);
+    });
+
+    row.appendChild(grid);
+    slotCont.appendChild(row);
+  });
+
+  // Tick labels
+  for (let t = 0; t < TICKS; t++) {
+    const lbl = document.createElement('div');
+    lbl.className = 'tick-lbl';
+    lbl.id = `${prefix}-tlbl-${t}`;
+    lbl.textContent = `t=${t + 1}`;
+    tickCont.appendChild(lbl);
+  }
+}
+
+buildPanel('static-slots','static-ticks', STATIC, 'st');
+buildPanel('cont-slots',  'cont-ticks',   CONT,   'cb');
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function cellEl(prefix, si, ti) {
+  return document.getElementById(`${prefix}-c${si}-t${ti}`);
+}
+
+// Show one column (tick ti) in a panel
+function revealCol(prefix, ti, instant=false) {
+  for (let si = 0; si < 3; si++) {
+    const c = cellEl(prefix, si, ti);
+    if (!c || c.classList.contains('empty')) continue;
+    if (instant) { c.style.opacity = '1'; c.style.transform = 'scale(1)'; }
+    else c.classList.add('show');
+  }
+  // Highlight tick label
+  const tlbl = document.getElementById(`${prefix}-tlbl-${ti}`);
+  if (tlbl) tlbl.classList.add('active');
+  // Move cursor
+  moveCursor(prefix, ti, instant);
+}
+
+function moveCursor(prefix, ti, instant=false) {
+  for (let si = 0; si < 3; si++) {
+    const grid = document.getElementById(`${prefix}-grid-${si}`);
+    const cursor = document.getElementById(`${prefix}-cursor-${si}`);
+    if (!grid || !cursor) continue;
+    // Position cursor to the right of column ti
+    // Each column = 1fr. We use the cell element's position.
+    const cell = cellEl(prefix, si, ti);
+    if (!cell) continue;
+    const gridRect  = grid.getBoundingClientRect();
+    const cellRect  = cell.getBoundingClientRect();
+    const rightPx   = cellRect.right - gridRect.left;
+    cursor.style.left = (rightPx + 1) + 'px';
+    if (!cursor.classList.contains('show')) cursor.classList.add('show');
+  }
+}
+
+function hideAllCursors() {
+  document.querySelectorAll('.cursor-col').forEach(c => c.classList.remove('show'));
+}
+
+// ── Reset / instant ────────────────────────────────────────────────────────
+function resetAll() {
+  for (const prefix of ['st','cb']) {
+    for (let si = 0; si < 3; si++) {
+      for (let ti = 0; ti < TICKS; ti++) {
+        const c = cellEl(prefix, si, ti);
+        if (!c) continue;
+        c.classList.remove('show');
+        c.style.opacity = '';
+        c.style.transform = '';
+      }
+    }
+    for (let ti = 0; ti < TICKS; ti++) {
+      const tlbl = document.getElementById(`${prefix}-tlbl-${ti}`);
+      if (tlbl) tlbl.classList.remove('active');
+    }
+  }
+  hideAllCursors();
+  document.getElementById('static-util').classList.remove('show');
+  document.getElementById('cont-util').classList.remove('show');
+  document.getElementById('summary-box').classList.remove('show');
+}
+
+function applyInstant(n) {
+  // n = step index (0=intro, 1-13=ticks, 14=summary)
+  const ticks = Math.min(n, TICKS);
+  for (let ti = 0; ti < ticks; ti++) {
+    revealCol('st', ti, true);
+    revealCol('cb', ti, true);
+  }
+  if (ticks > 0) {
+    // Re-highlight only current tick label
+    for (let ti = 0; ti < TICKS; ti++) {
+      const a = ti === ticks - 1;
+      document.getElementById(`st-tlbl-${ti}`)?.classList.toggle('active', a);
+      document.getElementById(`cb-tlbl-${ti}`)?.classList.toggle('active', a);
+    }
+    setTimeout(() => moveCursor('st', ticks-1, true), 30);
+    setTimeout(() => moveCursor('cb', ticks-1, true), 30);
+  }
+  if (n >= 14) {
+    document.getElementById('static-util').textContent = 'GPU util ≈ 79%';
+    document.getElementById('static-util').classList.add('show');
+    document.getElementById('cont-util').textContent = 'GPU util ≈ 85% · Done 2 iters early';
+    document.getElementById('cont-util').classList.add('show');
+    document.getElementById('summary-box').classList.add('show');
+  }
+}
+
+// ── Step descriptions ──────────────────────────────────────────────────────
+const TICK_DESCS = [
+  // idx 0 = intro (no tick)
+  'Three requests are queued: A (3 tokens), B (5 tokens), C (8 tokens). Three more wait: D (4), E (5), F (3). The key difference: static batching treats the whole batch as the atomic unit; continuous batching treats each decode iteration as the atomic unit.',
+  // t=1 (idx 1)
+  't=1 · Iteration 1: A, B, and C each produce one token in both panels. The batch looks identical so far.',
+  // t=2
+  't=2 · Iteration 2: second token from each request.',
+  // t=3
+  't=3 · Iteration 3: third and final token for Request A — A is about to complete.',
+  // t=4 — A done
+  't=4 · Request A completes ✓ (3/3 tokens).\n  Static: Slot 1 goes idle. B and C are still running so the scheduler cannot start the next batch — it must wait.\n  Continuous: Request D immediately fills Slot 1. Zero idle time.',
+  // t=5
+  't=5 · Static: Slot 1 still idle. Continuous: D, B, C all producing tokens.',
+  // t=6 — B done
+  't=6 · Request B completes ✓ (5/5 tokens).\n  Static: Slot 2 also goes idle. Now 2 of 3 slots are wasted, only C is running.\n  Continuous: Request E immediately fills Slot 2. Still at full capacity.',
+  // t=7
+  't=7 · Static: only C running — 2 slots wasted every iteration. Continuous: C, D, E all producing tokens.',
+  // t=8
+  't=8 · Static: last token for C. Continuous: C\'s last token — also D and E still running.',
+  // t=9 — C done
+  't=9 · Request C completes ✓ (8/8 tokens).\n  Static: entire batch done — after 5 idle slot-steps on Slot 1 and 3 on Slot 2, D/E/F can finally start.\n  Continuous: Request F immediately fills Slot 3. D has been running since t=4, E since t=6.',
+  // t=10
+  't=10 · Continuous: D finishes (started t=4, 4 tokens). Static: D, E, F just started their 2nd token.',
+  // t=11 — F done in continuous
+  't=11 · Continuous: F completes ✓ (3/3 tokens). All 6 requests done! Static: D, E, F mid-way through their run.',
+  // t=12
+  't=12 · Continuous is fully done — all slots finish at t=11. Static: D completes ✓, E still has 1 token left.',
+  // t=13 — static done
+  't=13 · Static: E completes ✓ — all 6 requests done. Continuous finished the same 6 requests at t=11, two full iterations earlier.',
+  // summary
+  't=13 · Final comparison: both approaches processed the same 6 requests on the same GPU. Continuous batching finished 2 iterations sooner and kept all 3 slots busy whenever requests were available. With longer prompts and larger queues the gap widens significantly.',
+];
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+// Step 0 = intro, steps 1-13 = one iteration each, step 14 = summary
+const STEPS = TICK_DESCS.map((desc, i) => ({
+  desc,
+  async run() {
+    if (i === 0) return; // intro, no tick to reveal
+    const ti = i - 1;   // 0-indexed tick
+    if (i <= TICKS) {
+      // Remove previous active label
+      if (ti > 0) {
+        document.getElementById(`st-tlbl-${ti-1}`)?.classList.remove('active');
+        document.getElementById(`cb-tlbl-${ti-1}`)?.classList.remove('active');
+      }
+      // Stagger the two panels slightly for visual effect
+      revealCol('st', ti);
+      await sleep(80);
+      revealCol('cb', ti);
+      await sleep(200);
+    } else {
+      // Summary step
+      document.getElementById('static-util').textContent = 'GPU util ≈ 79%';
+      document.getElementById('static-util').classList.add('show');
+      document.getElementById('cont-util').textContent = 'GPU util ≈ 85% · Done 2 iters early';
+      document.getElementById('cont-util').classList.add('show');
+      await sleep(200);
+      document.getElementById('summary-box').classList.add('show');
+    }
+  }
+}));
+
+// ── Navigation ────────────────────────────────────────────────────────────
+let cur = 0, busy = false, playActive = false;
+
+async function goTo(n) {
+  if (busy || n < 0 || n >= STEPS.length) return;
+  busy = true; setUI(false);
+  if (n <= cur) { resetAll(); applyInstant(n); }
+  else { if (n - cur > 1) { resetAll(); applyInstant(n - 1); } await STEPS[n].run(); }
+  cur = n; busy = false; updateUI();
+}
+
+async function playAll() {
+  if (busy) return;
+  playActive = true;
+  document.getElementById('btn-play').textContent = '■ Stop';
+  document.getElementById('btn-play').style.background = '#e53935';
+  document.getElementById('btn-play').onclick = stopPlay;
+  while (cur < STEPS.length - 1 && playActive) {
+    await goTo(cur + 1);
+    // shorter pause for middle iterations, longer on key events
+    const t = cur; // cur was just updated
+    const keyEvents = new Set([4,6,9,11,13,14]);
+    await sleep(keyEvents.has(t) ? 1100 : 500);
+  }
+  endPlay();
+}
+function stopPlay() { playActive = false; endPlay(); }
+function endPlay() {
+  playActive = false;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '▶ Play All'; btn.style.background = '#43a047'; btn.onclick = playAll;
+  updateUI();
+}
+function setUI(en) {
+  ['btn-prev','btn-next','btn-play','btn-reset'].forEach(id =>
+    document.getElementById(id).disabled = !en);
+}
+function updateUI() {
+  document.getElementById('step-pill').textContent = `Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent  = STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-play').disabled = cur === STEPS.length - 1;
+  document.getElementById('btn-reset').disabled = false;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === cur));
+}
+
+STEPS.forEach((_,i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => { stopPlay(); goTo(i); });
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click', () => { stopPlay(); goTo(cur-1); });
+document.getElementById('btn-next').addEventListener('click', () => { stopPlay(); goTo(cur+1); });
+document.getElementById('btn-play').addEventListener('click', playAll);
+document.getElementById('btn-reset').addEventListener('click', () => { stopPlay(); goTo(0); });
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if (e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>

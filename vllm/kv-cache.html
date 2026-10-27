@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KV Cache — Attention Matrix to Vector</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#eef0fc;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 32px}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;width:calc(100vw - 64px);max-width:100%;margin-bottom:14px}
+#topbar-left{display:flex;align-items:center;gap:14px}
+h1{font-size:1.2rem;color:#1a1d3e;font-weight:700}
+#step-pill{background:#0f766e;color:#fff;font-size:.76rem;font-weight:700;padding:5px 14px;border-radius:20px}
+.home-btn{font-size:.82rem;color:#4f5ff8;text-decoration:none;font-weight:700;padding:5px 12px;border:1.5px solid #c0c8e8;border-radius:7px;background:#eef0fc}
+
+/* ── Stage ──────────────────────────────────────────────────────────────── */
+#stage{
+  position:relative;
+  width:calc(100vw - 64px);max-width:100%;height:calc(100vh - 230px);
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 32px #1a1d3e1a;
+  display:flex;flex-direction:column;
+  overflow:hidden;padding:20px 24px 14px;gap:10px;
+}
+
+/* ── Formula bar ────────────────────────────────────────────────────────── */
+#formula-bar{
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-size:.88rem;font-weight:600;color:#475569;
+  background:#f8fafc;border-radius:8px;padding:8px 16px;border:1.5px solid #e2e8f0;
+  opacity:0;transition:opacity 400ms ease;
+}
+#formula-bar.show{opacity:1}
+#formula-bar .hi{font-weight:800;color:#0f766e}
+#formula-bar .op{color:#94a3b8;margin:0 2px}
+
+/* ── Main matrix equation area ─────────────────────────────────────────── */
+#equation-area{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:0;
+  min-height:0;overflow:hidden;
+}
+
+/* Equation block: one matrix + label + dim */
+.eq-block{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  opacity:0;transition:opacity 350ms ease;
+}
+.eq-block.show{opacity:1}
+
+.mat-name{
+  font-size:11px;font-weight:800;color:#64748b;
+  letter-spacing:.3px;
+}
+.mat-name .sub{font-size:9px}
+
+/* The actual matrix grid */
+.mat-grid{
+  display:grid;gap:4px;
+  transition:grid-template-rows 600ms cubic-bezier(.4,0,.2,1);
+}
+.mat-cell{
+  width:20px;height:20px;border-radius:3px;
+  background:#e2e8f0;
+  transition:background 350ms ease,opacity 350ms ease,transform 350ms ease;
+}
+/* Token-colored cells (Q, K, V) */
+.mc-tok0{background:#1e88e5cc}
+.mc-tok1{background:#43a047cc}
+.mc-tok2{background:#f57c00cc}
+.mc-tok3{background:#7c3aedcc}
+/* New decode token T5 — amber/gold */
+.mc-tok4{background:#f59e0bcc}
+.mat-cell.new-tok{outline:2px dashed #f59e0b;outline-offset:1px}
+/* Faded (non-active rows in decode mode) */
+.mat-cell.faded{opacity:0.12}
+/* Highlighted (current token row) */
+.mat-row-highlight .mat-cell{outline:1.5px solid #0f766e;outline-offset:1px}
+/* Score/attention heatmap cells */
+.mc-attn-0{background:#dbeffe}
+.mc-attn-1{background:#93c5fd}
+.mc-attn-2{background:#3b82f6}
+.mc-attn-3{background:#1d4ed8}
+/* Zero (masked) */
+.mc-zero{background:#f1f5f9;opacity:.35}
+/* Output cells */
+.mc-out{background:linear-gradient(135deg,#0f766ecc,#0891b2cc)}
+
+/* Dimension label below matrix */
+.dim-lbl{
+  font-size:9px;font-weight:700;color:#94a3b8;font-family:'Menlo','Courier New',monospace;
+  transition:color 400ms ease;
+}
+.dim-lbl.highlight{color:#0f766e}
+
+/* Cached badge on K^T and V */
+.cached-badge{
+  font-size:8px;font-weight:800;padding:1px 6px;border-radius:5px;
+  background:#ccfbf1;color:#0f766e;border:1px solid #99f6e4;
+  opacity:0;transition:opacity 300ms ease;
+  margin-top:1px;
+}
+.cached-badge.show{opacity:1}
+
+/* Badge for the newly-computed token row */
+.new-tok-badge{
+  font-size:8px;font-weight:800;padding:1px 6px;border-radius:5px;
+  background:#fef3c7;color:#92400e;border:1px solid #fde68a;
+  opacity:0;transition:opacity 300ms ease;
+  margin-top:2px;display:block;
+}
+.new-tok-badge.show{opacity:1}
+
+/* Operator symbols between blocks */
+.eq-op{
+  font-size:22px;font-weight:200;color:#cbd5e1;
+  padding:0 8px;flex-shrink:0;
+  opacity:0;transition:opacity 350ms ease;
+  align-self:center;margin-bottom:28px; /* offset so it aligns with matrix center */
+}
+.eq-op.show{opacity:1}
+.eq-op.highlight{color:#0f766e;font-weight:600}
+
+/* Softmax connector */
+.softmax-arrow{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:0 6px;flex-shrink:0;
+  opacity:0;transition:opacity 350ms ease;
+  align-self:center;margin-bottom:28px;
+}
+.softmax-arrow.show{opacity:1}
+.softmax-arrow-line{width:28px;height:2px;background:#94a3b8}
+.softmax-label{font-size:8px;font-weight:700;color:#94a3b8;white-space:nowrap}
+
+/* ── Bottom stats bar ───────────────────────────────────────────────────── */
+#stats-bar{
+  flex-shrink:0;
+  display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;
+}
+.stat-chip{
+  padding:7px 12px;border-radius:8px;border:1.5px solid #e2e8f0;
+  display:flex;flex-direction:column;gap:1px;
+  opacity:0;transition:opacity 350ms ease;
+  flex:1;min-width:120px;
+}
+.stat-chip.show{opacity:1}
+.stat-chip.highlight{border-color:#0f766e;background:#f0fdfa}
+.stat-chip.warn{border-color:#f59e0b;background:#fffbeb}
+.chip-val{font-size:13px;font-weight:800;color:#1a1d3e}
+.chip-val.green{color:#0f766e}
+.chip-val.amber{color:#b45309}
+.chip-lbl{font-size:8px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.4px}
+
+/* ── Scale overlay ─────────────────────────────────────────────────────── */
+#scale-overlay{
+  position:absolute;inset:0;background:#fff;border-radius:16px;
+  padding:28px 32px;
+  display:grid;grid-template-columns:1fr 1fr;gap:20px;
+  opacity:0;pointer-events:none;transition:opacity 400ms ease;
+}
+#scale-overlay.show{opacity:1;pointer-events:auto}
+
+.scale-card{border-radius:12px;padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+.scale-card.naive{background:#fffbeb;border:2px solid #fde68a}
+.scale-card.cache{background:#f0fdfa;border:2px solid #99f6e4}
+.sc-title{font-size:13px;font-weight:800}
+.sc-title.naive{color:#92400e}
+.sc-title.cache{color:#0f766e}
+.sc-formula{font-family:'Menlo','Courier New',monospace;font-size:1rem;font-weight:700;
+  background:#fff;padding:8px 12px;border-radius:6px;color:#1a1d3e}
+.sc-table{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;font-size:.83rem;color:#444}
+.sc-table b{color:#1a1d3e;font-weight:700}
+.sc-note{font-size:.8rem;line-height:1.55;padding:8px 10px;border-radius:7px}
+.sc-note.naive{background:#fef3c7;color:#92400e}
+.sc-note.cache{background:#ccfbf1;color:#0f766e}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+#desc-box{width:calc(100vw - 64px);max-width:100%;margin-top:12px;padding:12px 18px;background:#fff;
+  border-radius:10px;border-left:4px solid #0f766e;box-shadow:0 2px 10px #1a1d3e0d;
+  font-size:.86rem;line-height:1.65;color:#2a2d4e;min-height:52px}
+#controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+.ctrl{padding:9px 26px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .15s}
+#btn-prev{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-prev:hover:not(:disabled){background:#d8dcf0;color:#222}
+#btn-prev:disabled{opacity:.35;cursor:default}
+#btn-next{background:#0f766e;color:#fff}
+#btn-next:hover:not(:disabled){background:#115e59}
+#btn-next:disabled{opacity:.35;cursor:default}
+#btn-play{background:#0f766e;color:#fff}
+#btn-play:hover:not(:disabled){background:#115e59}
+#btn-play:disabled{opacity:.35;cursor:default}
+#btn-reset{background:#eef0fa;color:#555;border:1.5px solid #c0c8e8}
+#btn-reset:hover{background:#d8dcf0;color:#222}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#c8cce8;cursor:pointer;transition:all .2s}
+.dot.active{background:#0f766e;transform:scale(1.3)}
+
+@keyframes cellPop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.cell-pop{animation:cellPop 220ms cubic-bezier(.34,1.56,.64,1) forwards}
+@keyframes rowPop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Weight projection overlay ─────────────────────────────────────────── */
+#weight-overlay{
+  position:absolute;inset:0;background:#fff;border-radius:16px;
+  padding:18px 24px 14px;
+  display:flex;flex-direction:column;gap:6px;
+  opacity:0;pointer-events:none;transition:opacity 400ms ease;z-index:5;
+}
+#weight-overlay.show{opacity:1;pointer-events:auto}
+.wo-header{font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;flex-shrink:0}
+.wo-rows{display:flex;flex-direction:column;gap:0;flex:1;justify-content:space-evenly}
+.wo-row{
+  display:flex;align-items:center;gap:10px;
+  opacity:0;transform:translateX(-8px);
+  transition:opacity 350ms ease,transform 350ms ease;
+}
+.wo-row.show{opacity:1;transform:translateX(0)}
+.wo-lbl{font-size:13px;font-weight:800;width:26px;flex-shrink:0;text-align:right}
+.wo-block{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
+.wo-name{font-size:8.5px;font-weight:700;color:#64748b;text-align:center}
+.wo-grid{display:grid;gap:2px}
+.wc{width:14px;height:14px;border-radius:2px;background:#e2e8f0;
+    opacity:0;transition:opacity 180ms ease,transform 180ms cubic-bezier(.34,1.56,.64,1);
+    transform:scale(.5)}
+.wc.show{opacity:1;transform:scale(1)}
+/* embed cells reuse tok colors at smaller size */
+.wc-tok0{background:#1e88e5cc}.wc-tok1{background:#43a047cc}
+.wc-tok2{background:#f57c00cc}.wc-tok3{background:#7c3aedcc}
+.wc-tok4{background:#f59e0bcc}
+.wc-w{background:#6366f166;border:1px solid #6366f133}
+.wc-q{background:#0f766ecc}
+.wc-k{background:#b45309cc}
+.wc-v{background:#7c3aed99}
+.wo-op{font-size:22px;font-weight:200;color:#cbd5e1;flex-shrink:0;line-height:1}
+.wo-dim{font-size:8px;font-weight:600;color:#94a3b8;font-family:'Menlo',monospace;min-width:56px}
+.wo-note{font-size:9px;color:#94a3b8;font-style:italic;flex:1}
+.wo-badge{
+  font-size:8px;font-weight:700;padding:2px 7px;border-radius:5px;
+  background:#ccfbf1;color:#0f766e;border:1px solid #99f6e4;
+  opacity:0;transition:opacity 350ms ease;flex-shrink:0;
+}
+.wo-badge.show{opacity:1}
+.wo-divider{height:1px;background:#f0f2fa;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="topbar-left">
+    <a class="home-btn" href="index.html">← Home</a>
+    <h1>KV Cache</h1>
+  </div>
+  <span id="step-pill">Step 1 / 12</span>
+</div>
+
+<div id="stage">
+
+  <!-- Attention formula -->
+  <div id="formula-bar">
+    <span>Attention(Q, K, V)</span>
+    <span class="op">=</span>
+    <span>softmax</span><span class="op">(</span>
+    <span class="hi">Q · Kᵀ</span>
+    <span class="op">/</span>
+    <span>√d<sub>k</sub></span>
+    <span class="op">)</span>
+    <span class="op">·</span>
+    <span class="hi">V</span>
+  </div>
+
+  <!-- Main equation: [Q/q] × [K^T] = [S] → softmax → [α] × [V] = [out] -->
+  <div id="equation-area">
+
+    <!-- Q or q_t -->
+    <div class="eq-block" id="blk-q">
+      <div class="mat-name" id="q-name">Q</div>
+      <div class="mat-grid" id="q-grid" style="grid-template-columns:repeat(8,20px)"></div>
+      <div class="dim-lbl" id="q-dim">(t × dₖ)</div>
+    </div>
+
+    <div class="eq-op" id="op1">×</div>
+
+    <!-- K^T -->
+    <div class="eq-block" id="blk-kt">
+      <div class="mat-name">Kᵀ</div>
+      <div style="position:relative;display:inline-block">
+        <div class="mat-grid" id="kt-grid" style="grid-template-columns:repeat(4,20px)"></div>
+        <div class="cached-badge" id="kt-cache-badge">⟵ CACHED</div>
+        <div class="new-tok-badge" id="kt-new-badge">T5: embed × Wₖ → NEW ↑</div>
+      </div>
+      <div class="dim-lbl" id="kt-dim">(dₖ × t)</div>
+    </div>
+
+    <div class="eq-op" id="op2">=</div>
+
+    <!-- Score matrix S -->
+    <div class="eq-block" id="blk-s">
+      <div class="mat-name" id="s-name">S (scores)</div>
+      <div class="mat-grid" id="s-grid" style="grid-template-columns:repeat(4,20px)"></div>
+      <div class="dim-lbl" id="s-dim">(t × t)</div>
+    </div>
+
+    <!-- Softmax arrow -->
+    <div class="softmax-arrow" id="softmax-arrow">
+      <div class="softmax-arrow-line"></div>
+      <div class="softmax-label">softmax / √dₖ</div>
+      <div class="softmax-arrow-line"></div>
+    </div>
+
+    <!-- α (attention weights after softmax) -->
+    <div class="eq-block" id="blk-a">
+      <div class="mat-name" id="a-name">α (weights)</div>
+      <div class="mat-grid" id="a-grid" style="grid-template-columns:repeat(4,20px)"></div>
+      <div class="dim-lbl" id="a-dim">(t × t)</div>
+    </div>
+
+    <div class="eq-op" id="op3">×</div>
+
+    <!-- V -->
+    <div class="eq-block" id="blk-v">
+      <div class="mat-name">V</div>
+      <div style="position:relative;display:inline-block">
+        <div class="mat-grid" id="v-grid" style="grid-template-columns:repeat(8,20px)"></div>
+        <div class="cached-badge" id="v-cache-badge">⟵ CACHED</div>
+        <div class="new-tok-badge" id="v-new-badge">T5: embed × Wᵥ → NEW →</div>
+      </div>
+      <div class="dim-lbl" id="v-dim">(t × dₖ)</div>
+    </div>
+
+    <div class="eq-op" id="op4">=</div>
+
+    <!-- Output -->
+    <div class="eq-block" id="blk-out">
+      <div class="mat-name" id="out-name">output</div>
+      <div class="mat-grid" id="out-grid" style="grid-template-columns:repeat(8,20px)"></div>
+      <div class="dim-lbl" id="out-dim">(t × dₖ)</div>
+    </div>
+
+  </div>
+
+  <!-- Stats chips -->
+  <div id="stats-bar">
+    <div class="stat-chip" id="chip-mode">
+      <span class="chip-val" id="chip-mode-val">—</span>
+      <span class="chip-lbl">Computation type</span>
+    </div>
+    <div class="stat-chip" id="chip-q-shape">
+      <span class="chip-val" id="chip-qs-val">—</span>
+      <span class="chip-lbl">Q shape</span>
+    </div>
+    <div class="stat-chip" id="chip-score-shape">
+      <span class="chip-val" id="chip-ss-val">—</span>
+      <span class="chip-lbl">Score shape</span>
+    </div>
+    <div class="stat-chip" id="chip-flops">
+      <span class="chip-val" id="chip-flops-val">—</span>
+      <span class="chip-lbl">Attention FLOPs (per layer)</span>
+    </div>
+  </div>
+
+  <!-- Weight projection overlay (steps 1 and 6) -->
+  <div id="weight-overlay">
+    <div class="wo-header" id="wo-header">Prefill: projecting token embeddings through learned weight matrices</div>
+    <div class="wo-rows" id="wo-rows"><!-- built by JS --></div>
+    <div class="wo-divider"></div>
+    <div style="font-size:8.5px;color:#94a3b8;line-height:1.6;flex-shrink:0" id="wo-footnote"></div>
+  </div>
+
+  <!-- Scale overlay (step 8+) -->
+  <div id="scale-overlay">
+    <div class="scale-card naive">
+      <div class="sc-title naive">Without KV Cache — O(n² · d) attention</div>
+      <div class="sc-formula">Q(n×d) · Kᵀ(d×n) = S(n×n)<br>α(n×n) · V(n×d) = O(n×d)</div>
+      <div class="sc-table">
+        <div>n = 128 tokens</div><div><b>~2M multiply-adds</b></div>
+        <div>n = 1,024</div><div><b>~128M multiply-adds</b></div>
+        <div>n = 4,096</div><div><b>~2B multiply-adds</b></div>
+        <div>n = 32,768</div><div><b>~130B multiply-adds</b></div>
+      </div>
+      <div class="sc-note naive">Score matrix is n×n — grows quadratically. At long context this dominates total compute and must be materialized in memory (Flash Attention addresses this separately).</div>
+    </div>
+    <div class="scale-card cache">
+      <div class="sc-title cache">With KV Cache — O(n · d) attention per step</div>
+      <div class="sc-formula">q(1×d) · Kᵀ(d×n) = s(1×n)<br>α(1×n) · V(n×d) = o(1×d)</div>
+      <div class="sc-table">
+        <div>n = 128 tokens</div><div><b>~31K multiply-adds</b></div>
+        <div>n = 1,024</div><div><b>~250K multiply-adds</b></div>
+        <div>n = 4,096</div><div><b>~1M multiply-adds</b></div>
+        <div>n = 32,768</div><div><b>~8M multiply-adds</b></div>
+      </div>
+      <div class="sc-note cache">Score is a 1×n vector — memory reads dominate over compute. Bottleneck shifts from arithmetic to memory bandwidth. This is why decode is memory-bound, not compute-bound.</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="desc-box"></div>
+<div id="controls">
+  <button class="ctrl" id="btn-prev">← Prev</button>
+  <div id="dots"></div>
+  <button class="ctrl" id="btn-next">Next →</button>
+  <button class="ctrl" id="btn-play">▶ Play All</button>
+  <button class="ctrl" id="btn-reset">↺ Reset</button>
+</div>
+
+<script>
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+const raf2  = () => raf().then(raf);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Constants ─────────────────────────────────────────────────────────────
+const T  = 4;   // number of tokens
+const D  = 8;   // display columns for Q, V (represents d_k)
+const DK = 8;   // rows of K^T (same as D)
+// K^T has DK rows × T cols; Q has T rows × D cols; Score has T×T
+
+const TOK_COLORS  = ['#1e88e5','#43a047','#f57c00','#7c3aed'];
+const TOK_WORDS   = ['"The"','"cat"','"sat"','"on"'];
+
+// Illustrative causal attention weights (row i attends to cols 0..i)
+// Pre-softmax scores mapped to 4 intensity levels (0-3)
+const SCORE_LEVELS = [
+  [3, 0, 0, 0],   // t0: only self
+  [1, 3, 0, 0],   // t1: mostly self
+  [1, 2, 3, 0],   // t2: recency bias
+  [1, 2, 2, 3],   // t3: recency bias
+];
+
+// Decode: new token T5 attending to T1–T5 (cached T1–T4 + itself)
+const DECODE_SCORES = [1, 1, 2, 2, 3]; // 5 attention weights — T5 attends most to itself
+
+// ── Matrix builders ────────────────────────────────────────────────────────
+function clearGrid(id) { document.getElementById(id).innerHTML = ''; }
+
+function addCell(gridId, cls, delay=0) {
+  const cell = document.createElement('div');
+  cell.className = 'mat-cell ' + cls;
+  if (delay) {
+    cell.style.opacity = '0';
+    setTimeout(() => { cell.style.animation = 'cellPop 220ms cubic-bezier(.34,1.56,.64,1) forwards'; }, delay);
+  }
+  document.getElementById(gridId).appendChild(cell);
+  return cell;
+}
+
+// Q matrix: rows = number of active token rows, cols = D
+function buildQ(rows, delayBase=0, highlightLast=false) {
+  const grid = document.getElementById('q-grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < D; c++) {
+      const delay = delayBase + (r * D + c) * 6;
+      const tokIdx = (rows === 1) ? T : r;
+      const cell = addCell('q-grid', `mc-tok${tokIdx}`, delay);
+      if (highlightLast && r === rows - 1) cell.style.outline = '1.5px solid #0f766e';
+      if (highlightLast && r < rows - 1)  cell.classList.add('faded');
+    }
+  }
+}
+
+// K^T matrix: rows = DK, cols = T (+ optional new token column)
+function buildKT(delayBase=0, includeNew=false, newDelay=0) {
+  const grid = document.getElementById('kt-grid');
+  grid.innerHTML = '';
+  const cols = includeNew ? T + 1 : T;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
+  for (let r = 0; r < DK; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (includeNew && c === T) {
+        addCell('kt-grid', 'mc-tok4 new-tok', newDelay + r * 45);
+      } else {
+        addCell('kt-grid', `mc-tok${c}`, delayBase + (r * T + c) * 5);
+      }
+    }
+  }
+}
+
+// Score matrix: rows = nRows, cols = T (or T+1 in decode with new token)
+function buildScore(nRows, delayBase=0, decodeMode=false) {
+  const cols = decodeMode ? DECODE_SCORES.length : T;
+  const grid = document.getElementById('s-grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let cls;
+      if (decodeMode) {
+        cls = `mc-attn-${DECODE_SCORES[c]}`;
+      } else {
+        const level = SCORE_LEVELS[r][c];
+        cls = level === 0 ? 'mc-zero' : `mc-attn-${level}`;
+      }
+      addCell('s-grid', cls, delayBase + (r * cols + c) * 9);
+    }
+  }
+  buildAlpha(nRows, 0, decodeMode);
+}
+
+// Alpha (same shape as score, but softer — post-softmax distribution)
+function buildAlpha(nRows, delayBase=0, decodeMode=false) {
+  const cols = decodeMode ? DECODE_SCORES.length : T;
+  const grid = document.getElementById('a-grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let cls;
+      if (decodeMode) {
+        cls = `mc-attn-${Math.max(0, DECODE_SCORES[c] - 1)}`;
+      } else {
+        const level = SCORE_LEVELS[r][c];
+        cls = level === 0 ? 'mc-zero' : `mc-attn-${Math.max(0, level - 1)}`;
+      }
+      addCell('a-grid', cls, delayBase + (r * cols + c) * 7);
+    }
+  }
+}
+
+// V matrix: rows = T (+ optional new token row), cols = D
+function buildV(delayBase=0, includeNew=false, newDelay=0) {
+  const grid = document.getElementById('v-grid');
+  grid.innerHTML = '';
+  const rows = includeNew ? T + 1 : T;
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
+  for (let r = 0; r < rows; r++) {
+    if (includeNew && r === T) {
+      for (let c = 0; c < D; c++) {
+        addCell('v-grid', 'mc-tok4 new-tok', newDelay + c * 45);
+      }
+    } else {
+      for (let c = 0; c < D; c++) {
+        addCell('v-grid', `mc-tok${r}`, delayBase + (r * D + c) * 4);
+      }
+    }
+  }
+}
+
+// Output: nRows rows × D cols
+function buildOut(nRows, delayBase=0) {
+  const grid = document.getElementById('out-grid');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `repeat(${D}, 20px)`;
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < D; c++) {
+      addCell('out-grid', 'mc-out', delayBase + (r * D + c) * 5);
+    }
+  }
+}
+
+// ── Show/hide helpers ─────────────────────────────────────────────────────
+function showBlocks(...ids) { ids.forEach(id => document.getElementById(id).classList.add('show')); }
+function hideBlocks(...ids) { ids.forEach(id => document.getElementById(id).classList.remove('show')); }
+
+function setDim(id, text, highlight=false) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.classList.toggle('highlight', highlight);
+}
+function setChip(id, val, lbl, highlight=false, warn=false) {
+  document.getElementById(id+'').classList.add('show');
+  document.getElementById(id+'').classList.toggle('highlight', highlight);
+  document.getElementById(id+'').classList.toggle('warn', warn);
+  if (val !== null) document.getElementById(id.replace('chip-','chip-')+'').querySelector('.chip-val').textContent = val;
+  // crude helper
+  const chip = document.getElementById(id);
+  chip.classList.add('show');
+  chip.classList.toggle('highlight', highlight);
+  chip.classList.toggle('warn', warn);
+  chip.querySelector('.chip-val').textContent = val;
+  if (lbl) chip.querySelector('.chip-lbl').textContent = lbl;
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  ['q-grid','kt-grid','s-grid','a-grid','v-grid','out-grid'].forEach(id => {
+    document.getElementById(id).innerHTML='';
+  });
+  ['blk-q','blk-kt','blk-s','blk-a','blk-v','blk-out',
+   'op1','op2','op3','op4','softmax-arrow','formula-bar'].forEach(id => hideBlocks(id));
+  ['chip-mode','chip-q-shape','chip-score-shape','chip-flops'].forEach(id => {
+    document.getElementById(id).classList.remove('show','highlight','warn');
+  });
+  document.getElementById('kt-cache-badge').classList.remove('show');
+  document.getElementById('v-cache-badge').classList.remove('show');
+  document.getElementById('kt-new-badge').classList.remove('show');
+  document.getElementById('v-new-badge').classList.remove('show');
+  document.getElementById('kt-cache-badge').textContent = '⟵ CACHED';
+  document.getElementById('v-cache-badge').textContent = '⟵ CACHED';
+  document.getElementById('scale-overlay').classList.remove('show');
+  document.getElementById('weight-overlay').classList.remove('show');
+  document.querySelectorAll('#wo-rows .wo-row').forEach(r => r.classList.remove('show'));
+  document.querySelectorAll('#wo-rows .wc').forEach(c => c.classList.remove('show'));
+  document.querySelectorAll('#wo-rows .wo-badge').forEach(b => b.classList.remove('show'));
+  setDim('q-dim','(t × dₖ)',false);
+  setDim('kt-dim','(dₖ × t)',false);
+  setDim('v-dim','(t × dₖ)',false);
+  setDim('s-dim','(t × t)',false);
+  setDim('a-dim','(t × t)',false);
+  setDim('out-dim','(t × dₖ)',false);
+  document.getElementById('q-name').textContent = 'Q';
+  document.getElementById('s-name').textContent = 'S (scores)';
+  document.getElementById('a-name').textContent = 'α (weights)';
+  document.getElementById('out-name').textContent = 'output';
+}
+
+function applyInstant(n) {
+  if (n < 1) return;
+  showBlocks('formula-bar');
+  // n=1: weight overlay (prefill)
+  if (n === 1) {
+    buildWeightOverlay('prefill');
+    showBlocks('weight-overlay');
+    showWeightOverlayInstant();
+    return;
+  }
+  // n>=2: main attention equation visible
+  if (n >= 2) {
+    buildQ(T); buildKT(); buildV();
+    showBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+  }
+  if (n >= 3) {
+    buildScore(T); buildAlpha(T);
+    showBlocks('blk-s','blk-a');
+    setChip('chip-mode','Matrix × Matrix','Computation type',false,true);
+    setChip('chip-q-shape','(t × dₖ)','Q shape');
+    setChip('chip-score-shape','(t × t)','Score matrix shape',false,true);
+    setChip('chip-flops','O(t² · dₖ) per layer','Attention FLOPs',false,true);
+  }
+  if (n >= 4) {
+    buildOut(T);
+    showBlocks('blk-out');
+  }
+  if (n >= 5) {
+    // Decode mode — q collapses to 1 row
+    buildQ(1, 0, false);
+    document.getElementById('q-name').textContent = 'q_t';
+    setDim('q-dim','(1 × dₖ)',true);
+    clearGrid('s-grid'); clearGrid('a-grid'); clearGrid('out-grid');
+    hideBlocks('blk-s','blk-a','blk-out');
+  }
+  // n=6: decode weight overlay
+  if (n === 6) {
+    hideBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+    buildWeightOverlay('decode');
+    showBlocks('weight-overlay');
+    showWeightOverlayInstant();
+    return;
+  }
+  // n>=7: attention equation with T5 appended
+  if (n >= 7) {
+    buildQ(1, 0, false);
+    document.getElementById('q-name').textContent = 'q_t';
+    setDim('q-dim','(1 × dₖ)',true);
+    buildKT(0, true, 0); buildV(0, true, 0);
+    showBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+    setDim('kt-dim','(dₖ × t+1)',true);
+    setDim('v-dim','(t+1 × dₖ)',true);
+    document.getElementById('kt-cache-badge').textContent = 'T1–T4 ⟵ CACHED';
+    document.getElementById('v-cache-badge').textContent  = 'T1–T4 ⟵ CACHED';
+    document.getElementById('kt-cache-badge').classList.add('show');
+    document.getElementById('v-cache-badge').classList.add('show');
+    document.getElementById('kt-new-badge').classList.add('show');
+    document.getElementById('v-new-badge').classList.add('show');
+  }
+  if (n >= 8) {
+    buildScore(1, 0, true); buildAlpha(1, 0, true);
+    document.getElementById('s-name').textContent = 's (scores)';
+    document.getElementById('a-name').textContent = 'α (weights)';
+    setDim('s-dim','(1 × t+1)',true);
+    setDim('a-dim','(1 × t+1)',true);
+    showBlocks('blk-s','blk-a');
+    setChip('chip-score-shape','(1 × t+1)','Score shape (vector!)',true,false);
+    setChip('chip-q-shape','(1 × dₖ)','Q shape (single query)',true,false);
+  }
+  if (n >= 9) {
+    buildOut(1);
+    document.getElementById('out-name').textContent = 'output';
+    setDim('out-dim','(1 × dₖ)',true);
+    showBlocks('blk-out');
+    setChip('chip-mode','Matrix × Vector','Computation type',true,false);
+    setChip('chip-flops','O(t · dₖ) per layer','Attention FLOPs (decode)',true,false);
+  }
+  if (n >= 10) {
+    document.getElementById('scale-overlay').classList.add('show');
+  }
+}
+
+// ── Weight overlay helpers ────────────────────────────────────────────────
+const WD = D;  // overlay uses same column count as main matrices
+
+function woCell(cls) {
+  const c = document.createElement('div');
+  c.className = `wc ${cls}`;
+  return c;
+}
+
+function woGrid(rows, cols, getClass) {
+  const g = document.createElement('div');
+  g.className = 'wo-grid';
+  g.style.gridTemplateColumns = `repeat(${cols}, 14px)`;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      g.appendChild(woCell(getClass(r, c)));
+  return g;
+}
+
+function woBlock(name, grid) {
+  const b = document.createElement('div');
+  b.className = 'wo-block';
+  const n = document.createElement('div');
+  n.className = 'wo-name'; n.innerHTML = name;
+  b.appendChild(n); b.appendChild(grid);
+  return b;
+}
+
+function woOp(text) {
+  const o = document.createElement('div');
+  o.className = 'wo-op'; o.textContent = text;
+  return o;
+}
+
+// Animate all .wc cells in an element to appear staggered
+function animWoCells(el, delay=0, stride=18) {
+  el.querySelectorAll('.wc').forEach((c, i) =>
+    setTimeout(() => c.classList.add('show'), delay + i * stride));
+}
+
+function buildWeightOverlay(mode) {
+  // mode: 'prefill' | 'decode'
+  const rows = document.getElementById('wo-rows');
+  const header = document.getElementById('wo-header');
+  const footnote = document.getElementById('wo-footnote');
+  rows.innerHTML = '';
+
+  if (mode === 'prefill') {
+    header.textContent = 'Prefill: projecting token embeddings through learned weight matrices';
+    footnote.textContent = 'K and V are computed once per token and stored — the KV cache. Q is not stored because it\'s only needed at the moment of computation.';
+    const defs = [
+      { lbl:'E', lblColor:'#64748b', wName:'W<sub>Q</sub>', wNote:'query: "what am I looking for?"',
+        resultName:'Q', badge:null },
+      { lbl:'E', lblColor:'#64748b', wName:'W<sub>K</sub>', wNote:'key: "what do I contain?"',
+        resultName:'K', badge:'→ stored in KV cache' },
+      { lbl:'E', lblColor:'#64748b', wName:'W<sub>V</sub>', wNote:'value: "what info do I carry?"',
+        resultName:'V', badge:'→ stored in KV cache' },
+    ];
+    defs.forEach(d => {
+      const row = document.createElement('div');
+      row.className = 'wo-row';
+      const lbl = document.createElement('div');
+      lbl.className = 'wo-lbl'; lbl.style.color = d.lblColor; lbl.innerHTML = d.lbl;
+      // Embed: T rows × WD cols, tok colors
+      const eGrid = woGrid(T, WD, (r) => `wc-tok${r}`);
+      // W: WD × WD, weight color
+      const wGrid = woGrid(WD, WD, () => 'wc-w');
+      // Result: T × WD, per-row token colors
+      const rGrid = woGrid(T, WD, (r) => `wc-tok${r}`);
+      row.appendChild(lbl);
+      row.appendChild(woBlock('E &nbsp;(t × d)', eGrid));
+      row.appendChild(woOp('×'));
+      row.appendChild(woBlock(d.wName + ' &nbsp;(d × dₖ)', wGrid));
+      row.appendChild(woOp('='));
+      row.appendChild(woBlock(d.resultName + ' &nbsp;(t × dₖ)', rGrid));
+      const note = document.createElement('div'); note.className = 'wo-note'; note.textContent = d.wNote;
+      row.appendChild(note);
+      if (d.badge) {
+        const b = document.createElement('div'); b.className = 'wo-badge'; b.textContent = d.badge;
+        row.appendChild(b);
+      }
+      rows.appendChild(row);
+    });
+  } else {
+    // decode mode
+    header.textContent = 'Decode: projecting new token T5 through the same weight matrices';
+    footnote.textContent = 'q_t is used immediately for attention. k_T5 and v_T5 are appended to the KV cache so future tokens can attend to T5.';
+    const defs = [
+      { lbl:'e<sub>T5</sub>', lblColor:'#f59e0b', wName:'W<sub>Q</sub>',
+        resultName:'q<sub>t</sub>', note:'single query vector — used now, discarded after', badge:null },
+      { lbl:'e<sub>T5</sub>', lblColor:'#f59e0b', wName:'W<sub>K</sub>',
+        resultName:'k<sub>T5</sub>', note:'new key vector for T5', badge:'→ appended to K cache' },
+      { lbl:'e<sub>T5</sub>', lblColor:'#f59e0b', wName:'W<sub>V</sub>',
+        resultName:'v<sub>T5</sub>', note:'new value vector for T5', badge:'→ appended to V cache' },
+    ];
+    defs.forEach(d => {
+      const row = document.createElement('div');
+      row.className = 'wo-row';
+      const lbl = document.createElement('div');
+      lbl.className = 'wo-lbl'; lbl.style.color = d.lblColor; lbl.innerHTML = d.lbl;
+      // Single token T5 embedding (1 row, amber)
+      const eGrid = woGrid(1, WD, () => 'wc-tok4');
+      const wGrid = woGrid(WD, WD, () => 'wc-w');
+      const rGrid = woGrid(1, WD, () => 'wc-tok4');
+      row.appendChild(lbl);
+      row.appendChild(woBlock('embed(T5) &nbsp;(1 × d)', eGrid));
+      row.appendChild(woOp('×'));
+      row.appendChild(woBlock(d.wName + ' &nbsp;(d × dₖ)', wGrid));
+      row.appendChild(woOp('='));
+      row.appendChild(woBlock(d.resultName + ' &nbsp;(1 × dₖ)', rGrid));
+      const note = document.createElement('div'); note.className = 'wo-note'; note.textContent = d.note;
+      row.appendChild(note);
+      if (d.badge) {
+        const b = document.createElement('div'); b.className = 'wo-badge'; b.textContent = d.badge;
+        row.appendChild(b);
+      }
+      rows.appendChild(row);
+    });
+  }
+}
+
+async function animateWeightOverlay() {
+  // Show rows one by one with cell animations
+  const rowEls = document.querySelectorAll('#wo-rows .wo-row');
+  for (let i = 0; i < rowEls.length; i++) {
+    rowEls[i].classList.add('show');
+    // E cells → W cells → result cells
+    const blocks = rowEls[i].querySelectorAll('.wo-block');
+    if (blocks[0]) animWoCells(blocks[0], 0, 12);
+    if (blocks[1]) animWoCells(blocks[1], blocks[0] ? WD * T * 12 + 100 : 0, 8);
+    if (blocks[2]) animWoCells(blocks[2], blocks[0] ? WD * T * 12 + WD * WD * 8 + 200 : 0, 12);
+    // Show badge after result
+    const badge = rowEls[i].querySelector('.wo-badge');
+    if (badge) setTimeout(() => badge.classList.add('show'), WD*T*12 + WD*WD*8 + T*WD*12 + 350);
+    await new Promise(r => setTimeout(r, 350));
+  }
+}
+
+function showWeightOverlayInstant() {
+  document.querySelectorAll('#wo-rows .wo-row').forEach(r => r.classList.add('show'));
+  document.querySelectorAll('#wo-rows .wc').forEach(c => c.classList.add('show'));
+  document.querySelectorAll('#wo-rows .wo-badge').forEach(b => b.classList.add('show'));
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────
+const STEPS = [
+  // 0 — formula intro
+  {
+    desc: 'The attention mechanism lets every token look at every other token. For a context of t tokens, it computes: softmax( Q·Kᵀ / √dₖ ) · V — where Q, K, V are projections of the token embeddings. But where do Q, K, V come from?',
+    async run() { showBlocks('formula-bar'); }
+  },
+  // 1 (NEW) — W_Q, W_K, W_V projections (prefill)
+  {
+    desc: 'Q, K, and V are each produced by multiplying the token embeddings E through a separate learned weight matrix. Q = E × W_Q, K = E × W_K, V = E × W_V. These three weight matrices are the same for every token but encode different roles: queries ask questions, keys announce what a token contains, values carry the information to be passed on.',
+    async run() {
+      buildWeightOverlay('prefill');
+      showBlocks('weight-overlay');
+      await animateWeightOverlay();
+    }
+  },
+  // 2 — build full attention equation (was step 1)
+  {
+    desc: 'Prefill: all t tokens processed in parallel. Q, K, V are now computed — each a (t × dₖ) matrix. K is transposed to (dₖ × t) for the dot product. K and V are written into the KV cache immediately; Q is used and discarded.',
+    async run() {
+      hideBlocks('weight-overlay');
+      buildQ(T, 0); buildKT(200); buildV(400);
+      showBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+    }
+  },
+  // 3 — score computation (was step 2)
+  {
+    desc: 'Q · Kᵀ = Score matrix S. Shape: (t × dₖ) · (dₖ × t) = (t × t). This is a full matrix–matrix multiplication. Each cell S[i,j] is the dot product of query i with key j — how much token i should attend to token j. With t=4: 16 elements. With t=1024: over 1 million elements.',
+    async run() {
+      buildScore(T, 0);
+      showBlocks('blk-s');
+      setChip('chip-mode','Matrix × Matrix','Computation type',false,true);
+      setChip('chip-q-shape','(t × dₖ)','Q shape');
+      setChip('chip-score-shape','(t × t)','Score matrix shape',false,true);
+      setChip('chip-flops','O(t² · dₖ) per layer','Attention FLOPs',false,true);
+    }
+  },
+  // 4 — output (was step 3)
+  {
+    desc: 'After softmax, the attention weights α (same t×t shape) are multiplied by V. α · V = (t × t) · (t × dₖ) = (t × dₖ) output — one updated representation per token. During prefill this is necessary: we need all t output representations.',
+    async run() {
+      buildAlpha(T, 0); buildOut(T, 200);
+      showBlocks('blk-a','blk-out');
+    }
+  },
+  // 5 — decode: collapse Q (was step 4)
+  {
+    desc: 'Now consider the decode phase: generating one new token at a time. We only need the output representation for the NEW token — not for the t tokens already processed. So the full Q matrix collapses to a single query vector q_t.',
+    async run() {
+      await sleep(300);
+      buildQ(1, 0, false);
+      document.getElementById('q-name').textContent = 'q_t';
+      setDim('q-dim','(1 × dₖ)',true);
+      await sleep(400);
+      clearGrid('s-grid'); clearGrid('a-grid'); clearGrid('out-grid');
+      hideBlocks('blk-s','blk-a','blk-out');
+    }
+  },
+  // 6 (NEW) — decode W projections: show where q_t, k_T5, v_T5 come from
+  {
+    desc: 'For the new token T5, all three projections are still computed: q_t = embed(T5) × W_Q, k_T5 = embed(T5) × W_K, v_T5 = embed(T5) × W_V. But only k_T5 and v_T5 need to be stored — q_t is used immediately for attention and then discarded. This asymmetry is exactly what the KV cache exploits.',
+    async run() {
+      hideBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+      buildWeightOverlay('decode');
+      showBlocks('weight-overlay');
+      await animateWeightOverlay();
+    }
+  },
+  // 7 — append T5 K,V to cache (was step 5)
+  {
+    desc: 'k_T5 and v_T5 are appended to the KV cache. K and V each grow by one column/row (amber). The previous T1–T4 rows are untouched — we never recompute them. This is the core saving: O(1) new matmuls per token instead of re-running the full projection.',
+    async run() {
+      hideBlocks('weight-overlay');
+      showBlocks('blk-q','blk-kt','blk-v','op1','op2','op3','op4','softmax-arrow');
+      buildKT(0, true, 350);
+      setDim('kt-dim','(dₖ × t+1)',true);
+      document.getElementById('kt-cache-badge').textContent = 'T1–T4 ⟵ CACHED';
+      await sleep(250);
+      document.getElementById('kt-cache-badge').classList.add('show');
+      await sleep(DK * 45 + 200);
+      document.getElementById('kt-new-badge').classList.add('show');
+      await sleep(300);
+      buildV(0, true, 350);
+      setDim('v-dim','(t+1 × dₖ)',true);
+      document.getElementById('v-cache-badge').textContent  = 'T1–T4 ⟵ CACHED';
+      await sleep(250);
+      document.getElementById('v-cache-badge').classList.add('show');
+      await sleep(D * 45 + 200);
+      document.getElementById('v-new-badge').classList.add('show');
+    }
+  },
+  // 8 — decode scores (was step 6)
+  {
+    desc: 'Now q_t · Kᵀ = (1 × dₖ) · (dₖ × t+1) = (1 × t+1). The score is now a vector of length t+1, not a t×t matrix. This is the key computational shift: matrix–vector instead of matrix–matrix.',
+    async run() {
+      buildScore(1, 0, true);
+      document.getElementById('s-name').textContent = 's (scores)';
+      setDim('s-dim','(1 × t+1)',true);
+      showBlocks('blk-s');
+      await sleep(400);
+      setChip('chip-score-shape','(1 × t+1)','Score shape (vector!)',true,false);
+      setChip('chip-q-shape','(1 × dₖ)','Q shape (single query)',true,false);
+    }
+  },
+  // 9 — decode output (was step 7)
+  {
+    desc: 'softmax(s) · V = (1 × t+1) · (t+1 × dₖ) = (1 × dₖ). K and V are loaded from cache. The final output is a single dₖ-vector: T5\'s contextual representation, computed without recomputing any prior K or V.',
+    async run() {
+      buildAlpha(1, 0, true);
+      document.getElementById('a-name').textContent = 'α (weights)';
+      setDim('a-dim','(1 × t+1)',true);
+      showBlocks('blk-a');
+      await sleep(500);
+      buildOut(1, 100);
+      document.getElementById('out-name').textContent = 'output';
+      setDim('out-dim','(1 × dₖ)',true);
+      showBlocks('blk-out');
+      setChip('chip-mode','Matrix × Vector','Computation type',true,false);
+      setChip('chip-flops','O(t · dₖ) per layer','Attention FLOPs (decode)',true,false);
+    }
+  },
+  // 10 — scale comparison (was step 8)
+  {
+    desc: 'The transformation: prefill uses O(t² · dₖ) FLOPs for attention (full matrix multiply). Decode with KV cache uses O(t · dₖ) FLOPs — linear in sequence length. The bottleneck shifts from arithmetic to memory bandwidth (reading the KV cache). This is why GPUs are underutilized during decode.',
+    async run() {
+      document.getElementById('scale-overlay').classList.add('show');
+    }
+  },
+  // 11 — summary (was step 9)
+  {
+    desc: 'Summary: the KV cache does two things. (1) Avoids recomputing K and V — O(n) W_K, W_V matmuls total instead of O(n²). (2) Reduces attention from matrix–matrix (t×t score matrix) to matrix–vector (t-length score vector) during decode. The cost is memory: O(n × L × H × dₖ) per request — the pressure that PagedAttention is designed to manage.',
+    async run() {}
+  }
+];
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+let cur=0, busy=false, playActive=false;
+
+async function goTo(n) {
+  if (busy||n<0||n>=STEPS.length) return;
+  busy=true; setUI(false);
+  if (n<=cur) { resetAll(); applyInstant(n); }
+  else { if (n-cur>1) { resetAll(); applyInstant(n-1); } await STEPS[n].run(); }
+  cur=n; busy=false; updateUI();
+}
+async function playAll() {
+  if (busy) return;
+  playActive=true;
+  document.getElementById('btn-play').textContent='■ Stop';
+  document.getElementById('btn-play').style.background='#e53935';
+  document.getElementById('btn-play').onclick=stopPlay;
+  while (cur<STEPS.length-1&&playActive) { await goTo(cur+1); await sleep(1000); }
+  endPlay();
+}
+function stopPlay(){playActive=false;endPlay();}
+function endPlay(){
+  playActive=false;
+  const btn=document.getElementById('btn-play');
+  btn.textContent='▶ Play All';btn.style.background='#0f766e';btn.onclick=playAll;
+  updateUI();
+}
+function setUI(en){['btn-prev','btn-next','btn-play'].forEach(id=>document.getElementById(id).disabled=!en);}
+function updateUI(){
+  document.getElementById('step-pill').textContent=`Step ${cur+1} / ${STEPS.length}`;
+  document.getElementById('desc-box').textContent=STEPS[cur].desc;
+  document.getElementById('btn-prev').disabled=cur===0;
+  document.getElementById('btn-next').disabled=cur===STEPS.length-1;
+  document.getElementById('btn-play').disabled=cur===STEPS.length-1;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+}
+STEPS.forEach((_,i)=>{
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.addEventListener('click',()=>{stopPlay();goTo(i);});
+  document.getElementById('dots').appendChild(d);
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{stopPlay();goTo(cur-1);});
+document.getElementById('btn-next').addEventListener('click',()=>{stopPlay();goTo(cur+1);});
+document.getElementById('btn-play').addEventListener('click',playAll);
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();goTo(0);});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();stopPlay();goTo(cur+1);}
+  if(e.key==='ArrowLeft'){e.preventDefault();stopPlay();goTo(cur-1);}
+});
+updateUI();
+</script>
+</body>
+</html>
